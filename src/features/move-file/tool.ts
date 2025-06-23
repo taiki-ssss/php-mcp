@@ -6,7 +6,7 @@ const schema = z.object({
   oldPath: z.string().describe('Current file path (relative to root)'),
   newPath: z.string().describe('New file path (relative to root)'),
   root: z.string().optional().describe('Root directory for resolving relative paths'),
-  updateReferences: z.boolean().optional().default(true).describe('Update references in other files (default: true)'),
+  updateReferences: z.coerce.boolean().optional().default(true).describe('Update references in other files (default: true)'),
 });
 
 export const moveFileTool: ToolDef<typeof schema> = {
