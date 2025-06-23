@@ -13,8 +13,7 @@
       "@app/*": ["src/app/*"],
       "@features/*": ["src/features/*"],
       "@entities/*": ["src/entities/*"],
-      "@shared/*": ["src/shared/*"],
-      "@lib/*": ["src/lib/*"]
+      "@shared/*": ["src/shared/*"]
     }
   },
   "include": [

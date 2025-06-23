@@ -63,10 +63,8 @@ php-mcp/
 │   │           ├── index.ts
 │   │           ├── symbol-table.ts
 │   │           ├── scope-analyzer.ts
-│   │           └── project-scanner.ts
-│   │
-│   └── lib/                        # 外部ライブラリ
-│       └── php-parser/            # 既存のPHPパーサー
+│   │           ├── project-scanner.ts
+│   │           └── php-parser/    # 既存のPHPパーサー（移動済み）
 │
 ├── tests/                          # テスト
 │   ├── fixtures/                  # テスト用PHPファイル
@@ -254,8 +252,7 @@ tsconfig.jsonで以下のエイリアスを設定：
       "@app/*": ["src/app/*"],
       "@features/*": ["src/features/*"],
       "@entities/*": ["src/entities/*"],
-      "@shared/*": ["src/shared/*"],
-      "@lib/*": ["src/lib/*"]
+      "@shared/*": ["src/shared/*"]
     }
   }
 }
