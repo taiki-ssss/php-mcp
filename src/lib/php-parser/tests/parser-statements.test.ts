@@ -208,8 +208,8 @@ describe('Parser - Statements', () => {
       const stmt = getFirstStatement('<?php foreach ($array as $value) echo $value; ?>');
       expect(stmt.type).toBe('ForeachStatement');
       if (stmt.type === 'ForeachStatement') {
-        expect(stmt.expression.type).toBe('Variable');
-        expect(stmt.value.type).toBe('Variable');
+        expect(stmt.expression.type).toBe('VariableExpression');
+        expect(stmt.value.type).toBe('VariableExpression');
         expect(stmt.key).toBeNull();
         expect(stmt.body.type).toBe('EchoStatement');
       }
@@ -219,8 +219,8 @@ describe('Parser - Statements', () => {
       const stmt = getFirstStatement('<?php foreach ($array as $key => $value) {} ?>');
       expect(stmt.type).toBe('ForeachStatement');
       if (stmt.type === 'ForeachStatement') {
-        expect(stmt.key?.type).toBe('Variable');
-        expect(stmt.value.type).toBe('Variable');
+        expect(stmt.key?.type).toBe('VariableExpression');
+        expect(stmt.value.type).toBe('VariableExpression');
       }
     });
 
@@ -250,7 +250,7 @@ describe('Parser - Statements', () => {
       const stmt = getFirstStatement(code);
       expect(stmt.type).toBe('SwitchStatement');
       if (stmt.type === 'SwitchStatement') {
-        expect(stmt.discriminant.type).toBe('Variable');
+        expect(stmt.discriminant.type).toBe('VariableExpression');
         expect(stmt.cases).toHaveLength(3);
         expect(stmt.cases[0].test?.type).toBe('NumberLiteral');
         expect(stmt.cases[2].test).toBeNull(); // default case
@@ -323,9 +323,9 @@ describe('Parser - Statements', () => {
       if (stmt.type === 'TryStatement') {
         expect(stmt.block.type).toBe('BlockStatement');
         expect(stmt.handlers).toHaveLength(1);
-        expect(stmt.handlers[0].param?.type).toBe('Variable');
+        expect(stmt.handlers[0].param?.type).toBe('VariableExpression');
         expect(stmt.handlers[0].types).toHaveLength(1);
-        expect(stmt.finalizer).toBeNull();
+        expect(stmt.finalizer).toBeUndefined();
       }
     });
 
@@ -447,7 +447,7 @@ describe('Parser - Statements', () => {
       expect(stmt.type).toBe('StaticStatement');
       if (stmt.type === 'StaticStatement') {
         expect(stmt.declarations).toHaveLength(1);
-        expect(stmt.declarations[0].id.type).toBe('Variable');
+        expect(stmt.declarations[0].id.type).toBe('VariableExpression');
         expect(stmt.declarations[0].init?.type).toBe('NumberLiteral');
       }
     });

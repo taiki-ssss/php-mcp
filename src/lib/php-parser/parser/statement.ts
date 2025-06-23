@@ -1,6 +1,10 @@
 /**
- * 文パーサー
- * 制御構造や基本的な文のパース
+ * Statement Parser Module
+ * 
+ * Handles parsing of PHP statements including control structures,
+ * loops, conditionals, and other statement types.
+ * 
+ * @module statement
  */
 
 import { TokenKind } from '../core/token.js';
@@ -10,24 +14,37 @@ import { ParserBase } from './base.js';
 import { ExpressionParser } from './expression.js';
 
 /**
- * 文パーサー
+ * Statement parser that extends ExpressionParser to handle
+ * PHP statements and control structures.
+ * 
+ * @extends ExpressionParser
  */
 export class StatementParser extends ExpressionParser {
   /**
-   * 文をパース
+   * Parses a PHP statement.
+   * 
+   * This method handles all types of statements including:
+   * - Block statements
+   * - Control structures (if, while, for, foreach, switch)
+   * - Jump statements (break, continue, return, throw)
+   * - Exception handling (try-catch-finally)
+   * - Other statements (echo, global, static, etc.)
+   * - Expression statements
+   * 
+   * @returns The parsed statement or null if no statement could be parsed
+   * @throws ParseError if an invalid statement is encountered
    */
   parseStatement(): AST.Statement | null {
-    // Skip whitespace tokens
-    while (this.peek().kind === TokenKind.Whitespace || this.peek().kind === TokenKind.Newline) {
+    while (this.peek().kind === TokenKind.Whitespace || 
+           this.peek().kind === TokenKind.Newline ||
+           this.peek().kind === TokenKind.Comment ||
+           this.peek().kind === TokenKind.DocComment) {
       this.advance();
     }
     
-    // ブロック文
     if (this.check(TokenKind.LeftBrace)) {
       return this.parseBlockStatement();
     }
-
-    // 制御構造
     if (this.match(TokenKind.If)) {
       return this.parseIfStatement();
     }
@@ -72,7 +89,6 @@ export class StatementParser extends ExpressionParser {
       return this.parseTryStatement();
     }
 
-    // その他の文
     if (this.match(TokenKind.Echo)) {
       return this.parseEchoStatement();
     }
@@ -98,12 +114,11 @@ export class StatementParser extends ExpressionParser {
     }
 
     if (this.check(TokenKind.Identifier)) {
-      // ラベルの可能性をチェック
+      // Check for label syntax (identifier followed by colon)
       const savedPos = this.current;
       const id = this.parseIdentifier();
 
       if (this.match(TokenKind.Colon)) {
-        // ラベル文
         return {
           type: 'LabeledStatement',
           label: id.name,
@@ -111,23 +126,26 @@ export class StatementParser extends ExpressionParser {
         };
       }
 
-      // ラベルではない、位置を戻す
+      // Not a label, restore position
       this.current = savedPos;
     }
 
-    // 式文
     return this.parseExpressionStatement();
   }
 
   /**
-   * ブロック文をパース
+   * Parses a block statement (code enclosed in braces).
+   * 
+   * @returns The parsed block statement containing a list of statements
+   * @throws ParseError if the block is not properly closed
    */
   parseBlockStatement(): AST.BlockStatement {
     const start = this.consume(TokenKind.LeftBrace, "Expected '{'").location.start;
     const statements: AST.Statement[] = [];
 
     while (!this.check(TokenKind.RightBrace) && !this.isAtEnd()) {
-      const stmt = this.parseStatement();
+      // Virtual method pattern: DeclarationParser overrides this to handle declarations
+      const stmt = this.parseBlockItem();
       if (stmt) statements.push(stmt);
     }
 
@@ -141,7 +159,24 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * if文をパース
+   * Parses a single item within a block.
+   * 
+   * This is a virtual method that can be overridden by subclasses
+   * to handle additional constructs like declarations.
+   * 
+   * @protected
+   * @returns The parsed statement or null
+   */
+  protected parseBlockItem(): AST.Statement | null {
+    return this.parseStatement();
+  }
+
+  /**
+   * Parses an if statement with optional elseif and else clauses.
+   * 
+   * @private
+   * @returns The parsed if statement
+   * @throws ParseError if the if statement syntax is invalid
    */
   private parseIfStatement(): AST.IfStatement {
     const start = this.previous().location.start;
@@ -154,7 +189,7 @@ export class StatementParser extends ExpressionParser {
     const elseifs: AST.ElseIfClause[] = [];
     let alternate: AST.Statement | null = null;
 
-    // elseif clauses
+    // Parse elseif clauses
     while (this.match(TokenKind.ElseIf)) {
       const elseifStart = this.previous().location.start;
       this.consume(TokenKind.LeftParen, "Expected '(' after 'elseif'");
@@ -171,11 +206,12 @@ export class StatementParser extends ExpressionParser {
       });
     }
 
-    // else clause
+    // Parse else clause
     if (this.match(TokenKind.Else)) {
       alternate = this.parseStatement()!;
     }
 
+    // Calculate end location based on the last present clause
     const end = alternate?.location?.end || (elseifs.length > 0 ? elseifs[elseifs.length - 1].location!.end : consequent.location!.end);
 
     return {
@@ -189,7 +225,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * while文をパース
+   * Parses a while loop statement.
+   * 
+   * @private
+   * @returns The parsed while statement
+   * @throws ParseError if the while statement syntax is invalid
    */
   private parseWhileStatement(): AST.WhileStatement {
     const start = this.previous().location.start;
@@ -209,7 +249,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * do-while文をパース
+   * Parses a do-while loop statement.
+   * 
+   * @private
+   * @returns The parsed do-while statement
+   * @throws ParseError if the do-while statement syntax is invalid
    */
   private parseDoWhileStatement(): AST.DoWhileStatement {
     const start = this.previous().location.start;
@@ -230,14 +274,23 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * for文をパース
+   * Parses a for loop statement.
+   * 
+   * Handles the three parts of a for loop:
+   * - Initialization expression(s)
+   * - Test condition
+   * - Update expression(s)
+   * 
+   * @private
+   * @returns The parsed for statement
+   * @throws ParseError if the for statement syntax is invalid
    */
   private parseForStatement(): AST.ForStatement {
     const start = this.previous().location.start;
 
     this.consume(TokenKind.LeftParen, "Expected '(' after 'for'");
 
-    // 初期化
+    // Parse initialization expressions
     let init: AST.Expression | null = null;
     if (!this.check(TokenKind.Semicolon)) {
       const exprs: AST.Expression[] = [];
@@ -248,6 +301,7 @@ export class StatementParser extends ExpressionParser {
       if (exprs.length === 1) {
         init = exprs[0];
       } else {
+        // Multiple expressions are combined into a sequence expression
         init = {
           type: 'SequenceExpression',
           expressions: exprs,
@@ -257,14 +311,14 @@ export class StatementParser extends ExpressionParser {
     }
     this.consume(TokenKind.Semicolon, "Expected ';' after for init");
 
-    // 条件
+    // Parse test condition
     let test: AST.Expression | undefined;
     if (!this.check(TokenKind.Semicolon)) {
       test = this.parseExpression();
     }
     this.consume(TokenKind.Semicolon, "Expected ';' after for condition");
 
-    // 更新
+    // Parse update expressions
     let update: AST.Expression | null = null;
     if (!this.check(TokenKind.RightParen)) {
       const exprs: AST.Expression[] = [];
@@ -275,6 +329,7 @@ export class StatementParser extends ExpressionParser {
       if (exprs.length === 1) {
         update = exprs[0];
       } else {
+        // Multiple expressions are combined into a sequence expression
         update = {
           type: 'SequenceExpression',
           expressions: exprs,
@@ -297,7 +352,17 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * foreach文をパース
+   * Parses a foreach loop statement.
+   * 
+   * Handles both forms:
+   * - foreach ($array as $value)
+   * - foreach ($array as $key => $value)
+   * 
+   * Also supports reference values with &.
+   * 
+   * @private
+   * @returns The parsed foreach statement
+   * @throws ParseError if the foreach statement syntax is invalid
    */
   private parseForeachStatement(): AST.ForeachStatement {
     const start = this.previous().location.start;
@@ -306,28 +371,33 @@ export class StatementParser extends ExpressionParser {
     const expression = this.parseExpression();
     this.consume(TokenKind.As, "Expected 'as' in foreach");
 
-    let key: AST.Expression | null = null;
-    let value: AST.Expression;
+    let key: AST.Variable | null = null;
+    let value: AST.Variable;
     let byRef = false;
 
-    // Check for reference
     if (this.match(TokenKind.Ampersand)) {
       byRef = true;
     }
-
-    const expr1 = this.parseExpression();
+    // First variable in foreach can be either key or value depending on syntax
+    const matched = this.match(TokenKind.Variable);
+    if (!matched) {
+      throw this.error(this.peek(), "Expected variable in foreach");
+    }
+    const var1 = this.parseVariable() as AST.Variable;
 
     if (this.match(TokenKind.DoubleArrow)) {
-      // key => value
-      key = expr1;
-      // Check for reference again
+      key = var1;
       if (this.match(TokenKind.Ampersand)) {
         byRef = true;
       }
-      value = this.parseExpression();
+      // After =>, we expect the value variable
+      const matched2 = this.match(TokenKind.Variable);
+      if (!matched2) {
+        throw this.error(this.peek(), "Expected variable after '=>' in foreach");
+      }
+      value = this.parseVariable() as AST.Variable;
     } else {
-      // value only
-      value = expr1;
+      value = var1;
     }
 
     this.consume(TokenKind.RightParen, "Expected ')' after foreach");
@@ -345,7 +415,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * switch文をパース
+   * Parses a switch statement with case and default clauses.
+   * 
+   * @private
+   * @returns The parsed switch statement
+   * @throws ParseError if the switch statement syntax is invalid
    */
   private parseSwitchStatement(): AST.SwitchStatement {
     const start = this.previous().location.start;
@@ -363,6 +437,7 @@ export class StatementParser extends ExpressionParser {
         this.consume(TokenKind.Colon, "Expected ':' after case");
 
         const consequent: AST.Statement[] = [];
+        // Parse statements until we hit another case, default, or end of switch
         while (!this.check(TokenKind.Case) &&
           !this.check(TokenKind.Default) &&
           !this.check(TokenKind.RightBrace) &&
@@ -384,6 +459,7 @@ export class StatementParser extends ExpressionParser {
         this.consume(TokenKind.Colon, "Expected ':' after default");
 
         const consequent: AST.Statement[] = [];
+        // Parse statements until we hit another case, default, or end of switch
         while (!this.check(TokenKind.Case) &&
           !this.check(TokenKind.Default) &&
           !this.check(TokenKind.RightBrace) &&
@@ -417,13 +493,17 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * break文をパース
+   * Parses a break statement with optional numeric label.
+   * 
+   * @private
+   * @returns The parsed break statement
+   * @throws ParseError if the break statement syntax is invalid
    */
   private parseBreakStatement(): AST.BreakStatement {
     const start = this.previous().location.start;
     let label: AST.Expression | null = null;
 
-    if (this.check(TokenKind.Number)) {
+    if (this.match(TokenKind.Number)) {
       label = this.parseNumberLiteral();
     }
 
@@ -437,13 +517,17 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * continue文をパース
+   * Parses a continue statement with optional numeric label.
+   * 
+   * @private
+   * @returns The parsed continue statement
+   * @throws ParseError if the continue statement syntax is invalid
    */
   private parseContinueStatement(): AST.ContinueStatement {
     const start = this.previous().location.start;
     let label: AST.Expression | null = null;
 
-    if (this.check(TokenKind.Number)) {
+    if (this.match(TokenKind.Number)) {
       label = this.parseNumberLiteral();
     }
 
@@ -457,7 +541,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * return文をパース
+   * Parses a return statement with optional return value.
+   * 
+   * @private
+   * @returns The parsed return statement
+   * @throws ParseError if the return statement syntax is invalid
    */
   private parseReturnStatement(): AST.ReturnStatement {
     const start = this.previous().location.start;
@@ -477,7 +565,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * throw文をパース
+   * Parses a throw statement.
+   * 
+   * @private
+   * @returns The parsed throw statement
+   * @throws ParseError if the throw statement syntax is invalid
    */
   private parseThrowStatement(): AST.ThrowStatement {
     const start = this.previous().location.start;
@@ -492,7 +584,17 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * try文をパース
+   * Parses a try-catch-finally statement.
+   * 
+   * Supports:
+   * - Multiple catch blocks with different exception types
+   * - Union types in catch (PHP 7.1+)
+   * - Optional variable in catch (PHP 8.0+)
+   * - Optional finally block
+   * 
+   * @private
+   * @returns The parsed try statement
+   * @throws ParseError if the try statement syntax is invalid
    */
   private parseTryStatement(): AST.TryStatement {
     const start = this.previous().location.start;
@@ -504,15 +606,15 @@ export class StatementParser extends ExpressionParser {
       const catchStart = this.previous().location.start;
       this.consume(TokenKind.LeftParen, "Expected '(' after 'catch'");
 
-      // 型のリスト（PHP 7.1+ では複数の例外型を捕捉可能）
+      // Parse exception types (PHP 7.1+ supports multiple types with |)
       const types: AST.NameExpression[] = [];
       do {
         types.push(this.parseNameExpression());
       } while (this.match(TokenKind.Pipe));
 
-      // 変数（PHP 8.0+ では省略可能）
+      // Parse optional variable (can be omitted in PHP 8.0+)
       let param: AST.VariableExpression | undefined;
-      if (this.check(TokenKind.Variable)) {
+      if (this.match(TokenKind.Variable)) {
         param = this.parseVariable();
       }
 
@@ -536,6 +638,7 @@ export class StatementParser extends ExpressionParser {
       throw this.error(this.peek(), "Expected 'catch' or 'finally' after 'try'");
     }
 
+    // Determine the end location based on what parts are present
     const end = finalizer?.location?.end ||
       handlers[handlers.length - 1]?.location?.end ||
       block.location!.end;
@@ -550,7 +653,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * echo文をパース
+   * Parses an echo statement with one or more expressions.
+   * 
+   * @private
+   * @returns The parsed echo statement
+   * @throws ParseError if the echo statement syntax is invalid
    */
   private parseEchoStatement(): AST.EchoStatement {
     const start = this.previous().location.start;
@@ -570,13 +677,21 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * global文をパース
+   * Parses a global statement declaring global variables.
+   * 
+   * @private
+   * @returns The parsed global statement
+   * @throws ParseError if the global statement syntax is invalid
    */
   private parseGlobalStatement(): AST.GlobalStatement {
     const start = this.previous().location.start;
     const variables: AST.VariableExpression[] = [];
 
     do {
+      const matched = this.match(TokenKind.Variable);
+      if (!matched) {
+        throw this.error(this.peek(), "Expected variable in global statement");
+      }
       variables.push(this.parseVariable());
     } while (this.match(TokenKind.Comma));
 
@@ -590,13 +705,23 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * static文をパース
+   * Parses a static variable declaration statement.
+   * 
+   * Static variables maintain their value between function calls.
+   * 
+   * @private
+   * @returns The parsed static statement
+   * @throws ParseError if the static statement syntax is invalid
    */
   private parseStaticStatement(): AST.StaticStatement {
     const start = this.previous().location.start;
     const declarations: AST.StaticVariableDeclaration[] = [];
 
     do {
+      const matched = this.match(TokenKind.Variable);
+      if (!matched) {
+        throw this.error(this.peek(), "Expected variable in static statement");
+      }
       const variable = this.parseVariable();
       let initializer: AST.Expression | undefined;
 
@@ -625,7 +750,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * unset文をパース
+   * Parses an unset statement to destroy variables.
+   * 
+   * @private
+   * @returns The parsed unset statement
+   * @throws ParseError if the unset statement syntax is invalid
    */
   private parseUnsetStatement(): AST.UnsetStatement {
     const start = this.previous().location.start;
@@ -648,7 +777,11 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * goto文をパース
+   * Parses a goto statement for jumping to a label.
+   * 
+   * @private
+   * @returns The parsed goto statement
+   * @throws ParseError if the goto statement syntax is invalid
    */
   private parseGotoStatement(): AST.GotoStatement {
     const start = this.previous().location.start;
@@ -663,7 +796,16 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * declare文をパース
+   * Parses a declare statement for setting execution directives.
+   * 
+   * Common directives include:
+   * - strict_types=1
+   * - ticks=1
+   * - encoding='UTF-8'
+   * 
+   * @private
+   * @returns The parsed declare statement
+   * @throws ParseError if the declare statement syntax is invalid
    */
   private parseDeclareStatement(): AST.DeclareStatement {
     const start = this.previous().location.start;
@@ -705,12 +847,18 @@ export class StatementParser extends ExpressionParser {
   }
 
   /**
-   * 式文をパース
+   * Parses an expression statement.
+   * 
+   * Expression statements are expressions followed by a semicolon,
+   * such as function calls, assignments, etc.
+   * 
+   * @private
+   * @returns The parsed expression statement or null
    */
   private parseExpressionStatement(): AST.ExpressionStatement | null {
     const expr = this.parseExpression();
 
-    // セミコロンは省略可能な場合がある
+    // Semicolon may be optional in some contexts (e.g., before closing tag)
     if (this.check(TokenKind.Semicolon)) {
       this.advance();
     }

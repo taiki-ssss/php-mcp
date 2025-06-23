@@ -1,12 +1,23 @@
 /**
- * PHP トークン定義
- * TypeScript の Enum と Discriminated Union で型安全に
+ * PHP Token Definitions Module
+ * 
+ * Provides type-safe token definitions using TypeScript's Enum
+ * and Discriminated Unions for the PHP parser.
+ * 
+ * @module token
  */
 
 import { SourceLocation } from './location.js';
 
 /**
- * トークンの種類
+ * Token kinds enumeration.
+ * 
+ * Defines all possible token types in PHP including:
+ * - Literals (numbers, strings, identifiers)
+ * - Keywords (if, class, function, etc.)
+ * - Operators (+, -, ==, etc.)
+ * - Delimiters (parentheses, brackets, braces)
+ * - Special tokens (PHP tags, comments, etc.)
  */
 export enum TokenKind {
   // リテラル
@@ -184,40 +195,74 @@ export enum TokenKind {
 }
 
 /**
- * トークンの基本構造
+ * Base token interface.
+ * 
+ * All tokens share these common properties.
  */
 export interface BaseToken {
+  /** Token kind discriminator */
   readonly kind: TokenKind;
+  /** Raw text of the token */
   readonly text: string;
+  /** Source location information */
   readonly location: SourceLocation;
-  readonly type?: string; // PHP互換のタイプ
-  readonly value?: string | number; // PHP互換の値
+  /** PHP-compatible token type (e.g., T_STRING) */
+  readonly type?: string;
+  /** PHP-compatible token value */
+  readonly value?: string | number;
 }
 
 /**
- * 各トークンタイプの定義
+ * Number token interface.
+ * 
+ * Represents integer and floating-point literals.
  */
 export interface NumberToken extends BaseToken {
   readonly kind: TokenKind.Number;
+  /** Numeric value (preserved as string for precision) */
   readonly value: string | number;
 }
 
+/**
+ * String token interface.
+ * 
+ * Represents string literals including interpolated strings.
+ */
 export interface StringToken extends BaseToken {
   readonly kind: TokenKind.String | TokenKind.StringStart | TokenKind.StringMiddle | TokenKind.StringEnd;
+  /** Interpreted string value */
   readonly value: string;
+  /** Quote character used */
   readonly quote: '"' | "'" | '`';
 }
 
+/**
+ * Identifier token interface.
+ * 
+ * Represents names (class names, function names, etc.).
+ */
 export interface IdentifierToken extends BaseToken {
   readonly kind: TokenKind.Identifier;
+  /** Identifier name */
   readonly name: string;
 }
 
+/**
+ * Variable token interface.
+ * 
+ * Represents variable names (without the $ prefix).
+ */
 export interface VariableToken extends BaseToken {
   readonly kind: TokenKind.Variable;
+  /** Variable name (without $) */
   readonly name: string;
 }
 
+/**
+ * Keyword token interface.
+ * 
+ * Represents PHP reserved keywords.
+ */
 export interface KeywordToken extends BaseToken {
   readonly kind:
   | TokenKind.Abstract | TokenKind.And | TokenKind.Array | TokenKind.As
@@ -240,6 +285,11 @@ export interface KeywordToken extends BaseToken {
   | TokenKind.Use | TokenKind.Var | TokenKind.While | TokenKind.Xor | TokenKind.Yield;
 }
 
+/**
+ * Operator token interface.
+ * 
+ * Represents all PHP operators (arithmetic, logical, etc.).
+ */
 export interface OperatorToken extends BaseToken {
   readonly kind:
   | TokenKind.Plus | TokenKind.Minus | TokenKind.Star | TokenKind.Slash
@@ -261,6 +311,11 @@ export interface OperatorToken extends BaseToken {
   | TokenKind.Ellipsis | TokenKind.PlusPlus | TokenKind.MinusMinus;
 }
 
+/**
+ * Delimiter token interface.
+ * 
+ * Represents parentheses, brackets, and braces.
+ */
 export interface DelimiterToken extends BaseToken {
   readonly kind:
   | TokenKind.LeftParen | TokenKind.RightParen
@@ -268,6 +323,11 @@ export interface DelimiterToken extends BaseToken {
   | TokenKind.LeftBrace | TokenKind.RightBrace;
 }
 
+/**
+ * Special token interface.
+ * 
+ * Represents PHP tags, comments, whitespace, and other special tokens.
+ */
 export interface SpecialToken extends BaseToken {
   readonly kind:
   | TokenKind.OpenTag | TokenKind.OpenTagEcho | TokenKind.CloseTag
@@ -278,7 +338,9 @@ export interface SpecialToken extends BaseToken {
 }
 
 /**
- * 全てのトークンタイプの Union
+ * Union type of all token types.
+ * 
+ * This is the main token type used throughout the parser.
  */
 export type Token =
   | NumberToken
@@ -292,7 +354,10 @@ export type Token =
 
 
 /**
- * キーワードのマップ
+ * Keyword mapping table.
+ * 
+ * Maps lowercase keyword strings to their corresponding TokenKind.
+ * Used by the tokenizer to identify reserved words.
  */
 export const KEYWORDS = new Map<string, TokenKind>([
   ['abstract', TokenKind.Abstract],
@@ -372,7 +437,18 @@ export const KEYWORDS = new Map<string, TokenKind>([
 ]);
 
 /**
- * トークンが特定の種類かチェック
+ * Type guard to check if a token is of a specific kind.
+ * 
+ * @param token - The token to check
+ * @param kind - The expected token kind
+ * @returns True if the token is of the specified kind
+ * 
+ * @example
+ * ```typescript
+ * if (isTokenKind(token, TokenKind.Identifier)) {
+ *   console.log(token.name); // TypeScript knows token has name
+ * }
+ * ```
  */
 export function isTokenKind<K extends TokenKind>(
   token: Token,
@@ -382,14 +458,22 @@ export function isTokenKind<K extends TokenKind>(
 }
 
 /**
- * トークンを作成
+ * Creates a token with the specified properties.
+ * 
+ * @param kind - The token kind
+ * @param text - The raw text of the token
+ * @param location - The source location
+ * @returns A new token instance
  */
 export function createToken(kind: TokenKind, text: string, location: SourceLocation): Token {
   return createExtendedToken(kind, text, location);
 }
 
 /**
- * PHP互換のトークンタイプマッピング
+ * PHP-compatible token type mapping.
+ * 
+ * Maps TokenKind values to PHP's T_* constants for compatibility
+ * with PHP's token_get_all() function.
  */
 export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
   // PHP タグ
@@ -531,7 +615,17 @@ export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
 };
 
 /**
- * 拡張トークンを作成
+ * Creates an extended token with additional type-specific properties.
+ * 
+ * This function handles the creation of specialized token types
+ * with their unique properties (e.g., NumberToken with value,
+ * StringToken with quote type, etc.).
+ * 
+ * @param kind - The token kind
+ * @param text - The raw text of the token
+ * @param location - The source location
+ * @param data - Optional additional data for specialized tokens
+ * @returns A properly typed token instance
  */
 export function createExtendedToken(
   kind: TokenKind,

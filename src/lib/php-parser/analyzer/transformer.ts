@@ -92,18 +92,19 @@ export function constantFolding(ast: AST.Node | AST.Node[]): AST.Node | AST.Node
         let value: number;
 
         switch (node.operator) {
-          case '+': value = left.value + right.value; break;
-          case '-': value = left.value - right.value; break;
-          case '*': value = left.value * right.value; break;
-          case '/': value = left.value / right.value; break;
-          case '%': value = left.value % right.value; break;
-          case '**': value = Math.pow(left.value, right.value); break;
+          case '+': value = parseFloat(left.value) + parseFloat(right.value); break;
+          case '-': value = parseFloat(left.value) - parseFloat(right.value); break;
+          case '*': value = parseFloat(left.value) * parseFloat(right.value); break;
+          case '/': value = parseFloat(left.value) / parseFloat(right.value); break;
+          case '%': value = parseFloat(left.value) % parseFloat(right.value); break;
+          case '**': value = Math.pow(parseFloat(left.value), parseFloat(right.value)); break;
           default: return node;
         }
 
         return {
           type: 'NumberLiteral',
-          value,
+          value: String(value),
+          raw: String(value),
           location: node.location
         } as AST.NumberLiteral;
       }

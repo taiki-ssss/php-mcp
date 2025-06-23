@@ -42,7 +42,13 @@ export abstract class ParserBase {
   protected options: Required<ParserOptions>;
 
   constructor(tokens: Token[], options: ParserOptions = {}) {
-    this.tokens = tokens;
+    // Filter out whitespace and comment tokens for easier parsing
+    this.tokens = tokens.filter(t => 
+      t.kind !== TokenKind.Whitespace && 
+      t.kind !== TokenKind.Newline &&
+      t.kind !== TokenKind.Comment &&
+      t.kind !== TokenKind.DocComment
+    );
     this.options = {
       phpVersion: options.phpVersion ?? '8.0',
       errorRecovery: options.errorRecovery ?? true,

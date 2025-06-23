@@ -270,7 +270,7 @@ describe('Utility Functions', () => {
       
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.type).toBe('Program');
+        expect(result.value.type).toBe('PhpProgram');
         expect(result.value.statements).toBeInstanceOf(Array);
         expect(result.value.statements).toHaveLength(1);
         expect(result.value.statements[0].type).toBe('ExpressionStatement');

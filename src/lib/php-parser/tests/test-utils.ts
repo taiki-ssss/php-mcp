@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import type { Statement, Expression, Node } from '../core/ast';
-import { parsePhp, tokenizePhp, isErr, type Result } from '../index';
+import { parsePhp, tokenizePhp } from './test-helpers';
+import { isErr, type Result } from '../utils/result';
 
 export function expectTokens(input: string, expectedTypes: string[]): void {
   const result = tokenizePhp(input);
@@ -29,7 +30,7 @@ export function expectTokenValues(input: string, expectedValues: Array<[string, 
 }
 
 export function expectParseFail(input: string): void {
-  const result = parsePhp(input);
+  const result = parsePhp(input, { errorRecovery: false });
   expect(result.success).toBe(false);
 }
 

@@ -23,7 +23,7 @@ describe('Analyzer', () => {
         nodeTypes.push(node.type);
       });
 
-      expect(nodeTypes).toContain('Program');
+      expect(nodeTypes).toContain('PhpProgram');
       expect(nodeTypes).toContain('ExpressionStatement');
       expect(nodeTypes).toContain('AssignmentExpression');
       expect(nodeTypes).toContain('VariableExpression');
@@ -278,7 +278,7 @@ class Foo {
         if (node.type === 'NumberLiteral') {
           return {
             ...node,
-            value: 100
+            value: '100'
           };
         }
         return node;
@@ -294,7 +294,7 @@ class Foo {
         });
       });
 
-      expect(foundNumber.value).toBe(100);
+      expect(foundNumber.value).toBe('100');
     });
 
     test('should remove nodes by returning null', () => {
@@ -307,16 +307,12 @@ class Foo {
       const ast = parsePhp(code);
       if (!ast.success) throw new Error(`Parse failed: ${ast.error}`);
 
-      let removeNext = false;
       const transformed = transform(ast.value, (node) => {
         if (node.type === 'EchoStatement') {
-          if (removeNext) {
-            removeNext = false;
-            return null;
-          }
+          // Remove echo statements that say "remove"
           if (node.expressions[0].type === 'StringLiteral' &&
-            node.expressions[0].value === 'keep') {
-            removeNext = true;
+            node.expressions[0].value === 'remove') {
+            return null;
           }
         }
         return node;
@@ -369,7 +365,7 @@ class Foo {
           await new Promise(resolve => setTimeout(resolve, 1));
           return {
             ...node,
-            value: 999
+            value: '999'
           };
         }
         return node;
@@ -382,7 +378,7 @@ class Foo {
         }
       });
 
-      expect(foundNumber.value).toBe(999);
+      expect(foundNumber.value).toBe('999');
     });
 
     test('should handle nested transformations', () => {
@@ -472,8 +468,8 @@ class Foo {
       const calls: string[] = [];
       const visitor = createVisitor({
         CallExpression(node: CallExpression) {
-          if (node.callee.type === 'Identifier') {
-            calls.push(node.callee.name);
+          if (node.callee.type === 'NameExpression') {
+            calls.push(node.callee.parts.join('\\'));
           } else if (node.callee.type === 'MemberExpression' &&
             node.callee.property.type === 'Identifier') {
             calls.push(node.callee.property.name);
@@ -531,13 +527,13 @@ class Foo {
       if (!ast.success) throw new Error(`Parse failed: ${ast.error}`);
 
       const transformed = transform(ast.value, (node) => {
-        if (node.type === 'VariableExpression' && node.name === '$oldName') {
-          return { ...node, name: '$newName' };
+        if (node.type === 'VariableExpression' && node.name === 'oldName') {
+          return { ...node, name: 'newName' };
         }
-        if (node.type === 'Parameter' && node.name.type === 'VariableExpression' && node.name.name === '$oldName') {
+        if (node.type === 'Parameter' && node.name.type === 'VariableExpression' && node.name.name === 'oldName') {
           return {
             ...node,
-            name: { ...node.name, name: '$newName' }
+            name: { ...node.name, name: 'newName' }
           };
         }
         return node;
@@ -553,7 +549,7 @@ class Foo {
         }
       });
 
-      expect(variables.every(v => v === '$newName')).toBe(true);
+      expect(variables.every(v => v === 'newName')).toBe(true);
     });
   });
 });

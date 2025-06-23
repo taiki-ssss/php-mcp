@@ -1,6 +1,9 @@
 /**
- * PHP トークナイザー
- * Scanner を使用して PHP コードをトークン列に変換
+ * PHP Tokenizer Module
+ * 
+ * Converts PHP source code into a stream of tokens using the Scanner.
+ * 
+ * @module tokenizer
  */
 
 import { Token, TokenKind, KEYWORDS, createToken } from '../core/token.js';
@@ -64,7 +67,11 @@ export class Tokenizer {
   }
 
   /**
-   * トークンを保持すべきか判定
+   * Determines whether a token should be kept based on options.
+   * 
+   * @private
+   * @param token - The token to check
+   * @returns True if the token should be kept
    */
   private shouldKeepToken(token: Token): boolean {
     switch (token.kind) {
@@ -82,7 +89,10 @@ export class Tokenizer {
   }
 
   /**
-   * 次のトークンを取得
+   * Gets the next token from the source.
+   * 
+   * @private
+   * @returns The next token
    */
   private nextToken(): Token {
     const start = this.scanner.getCurrentPosition();
@@ -173,7 +183,11 @@ export class Tokenizer {
   }
 
   /**
-   * PHP タグ外のスキャン
+   * Scans content outside PHP tags (inline HTML).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns InlineHTML or PHP opening tag token
    */
   private scanOutsidePhp(start: SourcePosition): Token {
     // <?php タグをチェック
@@ -223,7 +237,11 @@ export class Tokenizer {
   }
 
   /**
-   * 単一行コメント
+   * Scans a single-line comment (// style).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Comment token
    */
   private scanSingleLineComment(start: SourcePosition): Token {
     this.scanner.skip(2); // //
@@ -232,7 +250,12 @@ export class Tokenizer {
   }
 
   /**
-   * 複数行コメント
+   * Scans a multi-line comment (block comment style).
+   * Distinguishes between regular comments and doc comments.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Comment or DocComment token
    */
   private scanMultiLineComment(start: SourcePosition): Token {
     this.scanner.skip(2); // /*
@@ -256,7 +279,11 @@ export class Tokenizer {
   }
 
   /**
-   * # コメント
+   * Scans a hash comment (# style).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Comment token
    */
   private scanHashComment(start: SourcePosition): Token {
     this.scanner.advance(); // #
@@ -265,7 +292,12 @@ export class Tokenizer {
   }
 
   /**
-   * 文字列リテラル
+   * Scans a string literal (single or double quoted).
+   * Handles escape sequences.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns String token
    */
   private scanString(start: SourcePosition): Token {
     const quote = this.scanner.advance();
@@ -294,14 +326,23 @@ export class Tokenizer {
   }
 
   /**
-   * バックティック文字列（シェル実行）
+   * Scans a backtick string (shell execution).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns String token for shell execution
    */
   private scanBacktickString(start: SourcePosition): Token {
     return this.scanString(start);
   }
 
   /**
-   * Heredoc/Nowdoc
+   * Scans the start of a Heredoc or Nowdoc.
+   * Sets up pending heredoc state for content scanning.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns StartHeredoc token
    */
   private scanHeredoc(start: SourcePosition): Token {
     // Heredoc/Nowdocのラベルを解析
@@ -339,7 +380,11 @@ export class Tokenizer {
   }
 
   /**
-   * Heredoc/Nowdocの内容をスキャン
+   * Scans the content of a Heredoc or Nowdoc.
+   * Called after StartHeredoc token to process content.
+   * 
+   * @private
+   * @returns EncapsedAndWhitespace or EndHeredoc token, or null
    */
   private scanHeredocContent(): Token | null {
     if (!this.pendingHeredoc) return null;
@@ -407,7 +452,12 @@ export class Tokenizer {
   }
 
   /**
-   * 数値リテラル
+   * Scans a numeric literal.
+   * Supports decimal, hexadecimal, binary, and octal formats.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Number token
    */
   private scanNumber(start: SourcePosition): Token {
     let text = '';
@@ -447,7 +497,11 @@ export class Tokenizer {
   }
 
   /**
-   * 10進数のスキャン
+   * Scans a decimal number.
+   * Handles integers, floats, and scientific notation.
+   * 
+   * @private
+   * @returns The numeric string
    */
   private scanDecimalNumber(): string {
     let text = '';
@@ -484,14 +538,23 @@ export class Tokenizer {
   }
 
   /**
-   * 数字列のスキャン
+   * Scans a sequence of digits based on a predicate.
+   * 
+   * @private
+   * @param predicate - Function to test if a character is a valid digit
+   * @returns The digit string
    */
   private scanDigits(predicate: (char: string) => boolean): string {
     return this.scanner.consumeWhile(predicate);
   }
 
   /**
-   * 変数
+   * Scans a variable name.
+   * Handles simple variables ($var) and complex forms (${expr}, $$var).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Variable token
    */
   private scanVariable(start: SourcePosition): Token {
     let text = this.scanner.advance(); // $
@@ -513,7 +576,12 @@ export class Tokenizer {
   }
 
   /**
-   * 識別子またはキーワード
+   * Scans an identifier or keyword.
+   * Checks if the identifier is a reserved keyword.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Identifier or Keyword token
    */
   private scanIdentifierOrKeyword(start: SourcePosition): Token {
     const text = this.scanner.consumeWhile(char => CharUtils.isIdentifierPart(char));
@@ -533,7 +601,12 @@ export class Tokenizer {
   }
 
   /**
-   * 演算子・記号
+   * Scans operators and punctuation.
+   * Handles multi-character operators (===, <=>, etc.).
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Operator or delimiter token
    */
   private scanOperatorOrPunctuation(start: SourcePosition): Token {
     const char = this.scanner.peek();
@@ -692,7 +765,12 @@ export class Tokenizer {
   }
 
   /**
-   * 属性のスキャン
+   * Scans a PHP 8+ attribute (#[...]).
+   * Handles nested brackets.
+   * 
+   * @private
+   * @param start - Starting position
+   * @returns Attribute token
    */
   private scanAttribute(start: SourcePosition): Token {
     this.scanner.skip(2); // #[
@@ -718,7 +796,13 @@ export class Tokenizer {
   }
 
   /**
-   * トークンを作成
+   * Creates a token with the given properties.
+   * 
+   * @private
+   * @param kind - Token kind
+   * @param text - Token text
+   * @param start - Starting position
+   * @returns Created token
    */
   private makeToken(kind: TokenKind, text: string, start: SourcePosition): Token {
     const location = createLocation(start, this.scanner.getCurrentPosition());
@@ -729,7 +813,11 @@ export class Tokenizer {
 }
 
 /**
- * 便利な関数：文字列をトークン化
+ * Convenience function to tokenize PHP source code.
+ * 
+ * @param source - PHP source code
+ * @param options - Tokenizer options
+ * @returns Array of tokens
  */
 export function tokenize(source: string, options?: TokenizerOptions): Token[] {
   const tokenizer = new Tokenizer(source, options);

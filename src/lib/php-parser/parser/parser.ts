@@ -1,6 +1,9 @@
 /**
- * PHP パーサー
- * トークン列から AST を構築
+ * PHP Parser Module
+ * 
+ * Main parser that converts a token stream into an AST.
+ * 
+ * @module parser
  */
 
 import { Token, TokenKind } from '../core/token.js';
@@ -10,18 +13,29 @@ import { ParserOptions } from './base.js';
 import { DeclarationParser } from './declaration.js';
 
 /**
- * PHP パーサー
+ * Main PHP parser class that orchestrates the parsing process.
+ * 
+ * @extends DeclarationParser
  */
 export class Parser extends DeclarationParser {
   /**
-   * プログラムをパース
+   * Parses a complete PHP program.
+   * 
+   * Handles:
+   * - PHP opening/closing tags
+   * - Inline HTML between PHP blocks
+   * - Multiple PHP blocks in one file
+   * - Error recovery (if enabled)
+   * 
+   * @returns The parsed PHP program AST
+   * @throws ParseError if parsing fails and error recovery is disabled
    */
-  parse(): AST.Program {
+  parse(): AST.PhpProgram {
     const start = this.peek().location.start;
     const statements: AST.Statement[] = [];
 
     // Handle initial HTML if any
-    if (this.peek().type === TokenKind.InlineHTML) {
+    if (this.peek().kind === TokenKind.InlineHTML) {
       const htmlToken = this.advance();
       statements.push({
         type: 'InlineHTMLStatement',
@@ -36,7 +50,7 @@ export class Parser extends DeclarationParser {
     }
 
     while (!this.isAtEnd()) {
-      // Handle closing tag
+      // Check for closing tag first to handle empty PHP blocks
       if (this.check(TokenKind.CloseTag)) {
         this.advance(); // consume the closing tag
         // Handle any HTML after closing tag
@@ -52,15 +66,17 @@ export class Parser extends DeclarationParser {
         if (this.match(TokenKind.OpenTag, TokenKind.OpenTagEcho)) {
           continue;
         }
-        break; // No more PHP code
+        // Continue parsing - there might be more tokens even after ?>
+        continue;
       }
-
+      
+      // Parse statement
       try {
         const stmt = this.parseDeclaration();
         if (stmt) statements.push(stmt);
       } catch (error) {
         if (this.options.errorRecovery) {
-          // エラーリカバリー: 次の文まで同期
+          // Error recovery: synchronize to next statement
           this.synchronize();
         } else {
           throw error;
@@ -73,7 +89,7 @@ export class Parser extends DeclarationParser {
       : this.previous().location.end;
 
     return {
-      type: 'Program',
+      type: 'PhpProgram',
       statements,
       location: createLocation(start, end)
     };
@@ -81,13 +97,18 @@ export class Parser extends DeclarationParser {
 }
 
 /**
- * パーサーをエクスポート
+ * Re-export parser utilities and types
  */
 export { ParseError, type ParserOptions } from './base.js';
 export * from '../core/ast.js';
 
 /**
- * トークン列をパース
+ * Convenience function to parse a token array into an AST.
+ * 
+ * @param tokens - Array of tokens from the lexer
+ * @param options - Optional parser configuration
+ * @returns The parsed PHP program AST
+ * @throws ParseError if parsing fails
  */
 export function parse(tokens: Token[], options?: ParserOptions): AST.PhpProgram {
   const parser = new Parser(tokens, options);

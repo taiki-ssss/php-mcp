@@ -37,7 +37,7 @@ export { Result, ok, err, isOk, isErr } from './utils/result.js';
 
 import { tokenize, type TokenizerOptions } from './lexer/tokenizer.js';
 import { parse, type ParserOptions } from './parser/parser.js';
-import type { Program } from './core/ast.js';
+import type { Program, PhpProgram } from './core/ast.js';
 import type { Token } from './core/token.js';
 import { Result, ok, err } from './utils/result.js';
 
@@ -72,7 +72,7 @@ export function tokenizePhp(
 export function parsePhp(
   source: string,
   options?: ParserOptions & TokenizerOptions
-): Result<Program> {
+): Result<PhpProgram> {
   try {
     const tokens = tokenize(source, options);
     // Filter out whitespace and newline tokens before parsing

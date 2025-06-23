@@ -1,6 +1,10 @@
 /**
- * 宣言パーサー
- * クラス、関数、インターフェースなどの宣言をパース
+ * Declaration Parser Module
+ * 
+ * Handles parsing of PHP declarations including classes, functions,
+ * interfaces, traits, enums, and namespaces.
+ * 
+ * @module declaration
  */
 
 import { TokenKind } from '../core/token.js';
@@ -9,25 +13,103 @@ import { SourcePosition, createLocation, mergeLocations } from '../core/location
 import { StatementParser } from './statement.js';
 
 /**
- * 宣言パーサー
+ * Declaration parser that extends StatementParser to handle
+ * PHP declarations and top-level constructs.
+ * 
+ * @extends StatementParser
  */
 export class DeclarationParser extends StatementParser {
   /**
-   * トップレベル宣言をパース
+   * Parse a block item (statement or declaration)
+   * Overrides the parent method to handle declarations inside blocks
+   */
+  protected parseBlockItem(): AST.Statement | null {
+    return this.parseDeclaration();
+  }
+
+  /**
+   * Parses a top-level declaration or statement.
+   * 
+   * This method handles:
+   * - Class declarations (with modifiers like abstract, final, readonly)
+   * - Function declarations
+   * - Interface declarations
+   * - Trait declarations
+   * - Enum declarations
+   * - Namespace declarations
+   * - Use statements
+   * - Const statements
+   * - Regular statements (fallback)
+   * 
+   * @returns The parsed declaration or statement, or null
+   * @throws ParseError if invalid syntax is encountered
    */
   parseDeclaration(): AST.Statement | null {
-    // Skip whitespace tokens
-    while (this.peek().kind === TokenKind.Whitespace || this.peek().kind === TokenKind.Newline) {
+    while (this.peek().kind === TokenKind.Whitespace || 
+           this.peek().kind === TokenKind.Newline ||
+           this.peek().kind === TokenKind.Comment ||
+           this.peek().kind === TokenKind.DocComment) {
       this.advance();
     }
     
-    // 宣言
-    if (this.match(TokenKind.Function)) {
+    // Check for class modifiers (abstract, final, readonly)
+    if (this.check(TokenKind.Abstract) || this.check(TokenKind.Final) || this.check(TokenKind.Readonly)) {
+      const savedPos = this.current;
+      const modifiers: string[] = [];
+      
+      // Collect all modifiers
+      while (this.check(TokenKind.Abstract) || this.check(TokenKind.Final) || this.check(TokenKind.Readonly)) {
+        modifiers.push(this.advance().text.toLowerCase());
+      }
+      
+      // If followed by 'class', it's a class declaration with modifiers
+      if (this.check(TokenKind.Class)) {
+        this.advance(); // consume 'class'
+        return this.parseClassDeclaration(modifiers);
+      }
+      
+      // Otherwise, restore position and treat as statement
+      this.current = savedPos;
+      return this.parseStatement();
+    }
+
+    if (this.check(TokenKind.Function)) {
+      // Check if this is a function declaration or an anonymous function
+      const savedPos = this.current;
+      this.advance(); // consume 'function'
+      
+      // If followed by '(' it's an anonymous function expression
+      if (this.check(TokenKind.LeftParen)) {
+        this.current = savedPos; // restore position
+        return this.parseStatement();
+      }
+      
+      // Otherwise, it's a function declaration
       return this.parseFunctionDeclaration();
     }
 
-    if (this.match(TokenKind.Class)) {
-      return this.parseClassDeclaration();
+    if (this.check(TokenKind.Class)) {
+      // Check if this is a class declaration or an expression like Class::method()
+      const savedPos = this.current;
+      this.advance(); // consume 'class'
+      
+      // If followed by an identifier, it's a class declaration
+      if (this.check(TokenKind.Identifier)) {
+        this.current = savedPos; // restore position
+        this.advance(); // consume 'class' again
+        return this.parseClassDeclaration();
+      }
+      
+      // If followed by '{' or other declaration-specific tokens, it's an incomplete class declaration
+      if (this.check(TokenKind.LeftBrace) || this.check(TokenKind.Extends) || 
+          this.check(TokenKind.Implements) || this.check(TokenKind.CloseTag) ||
+          this.check(TokenKind.Semicolon) || this.isAtEnd()) {
+        throw this.error(this.peek(), "Expected class name after 'class'");
+      }
+      
+      // Otherwise, treat it as an expression (e.g., Class::method())
+      this.current = savedPos; // restore position
+      return this.parseStatement();
     }
 
     if (this.match(TokenKind.Interface)) {
@@ -54,12 +136,22 @@ export class DeclarationParser extends StatementParser {
       return this.parseConstStatement();
     }
 
-    // その他は文として処理
     return this.parseStatement();
   }
 
   /**
-   * 関数宣言をパース
+   * Parses a function declaration.
+   * 
+   * Handles:
+   * - Function name
+   * - Reference operator (&)
+   * - Parameter list
+   * - Return type declaration
+   * - Function body
+   * 
+   * @private
+   * @returns The parsed function declaration
+   * @throws ParseError if function syntax is invalid
    */
   private parseFunctionDeclaration(): AST.FunctionDeclaration {
     const start = this.previous().location.start;
@@ -85,14 +177,38 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * クラス宣言をパース
+   * Parses a class declaration.
+   * 
+   * Handles:
+   * - Class modifiers (abstract, final, readonly)
+   * - Class name
+   * - Extends clause (inheritance)
+   * - Implements clause (interface implementation)
+   * - Class body with members
+   * 
+   * @private
+   * @param providedModifiers - Pre-parsed modifiers (abstract, final, readonly)
+   * @returns The parsed class declaration
+   * @throws ParseError if class syntax is invalid
    */
-  private parseClassDeclaration(): AST.ClassDeclaration {
-    const start = this.previous().location.start;
+  private parseClassDeclaration(providedModifiers?: string[]): AST.ClassDeclaration {
+    const start = providedModifiers && providedModifiers.length > 0
+      ? this.tokens[this.current - providedModifiers.length - 1].location.start
+      : this.previous().location.start;
+    
     const modifiers: AST.ClassModifier[] = [];
 
-    // PHP 8.0+ readonly classes
-    if (this.previous().kind === TokenKind.Readonly) {
+    // Add provided modifiers if any
+    if (providedModifiers) {
+      for (const mod of providedModifiers) {
+        if (mod === 'abstract' || mod === 'final' || mod === 'readonly') {
+          modifiers.push(mod);
+        }
+      }
+    }
+
+    // PHP 8.0+ readonly classes (legacy check for backward compatibility)
+    if (!providedModifiers && this.previous().kind === TokenKind.Readonly) {
       modifiers.push('readonly');
       this.consume(TokenKind.Class, "Expected 'class' after 'readonly'");
     }
@@ -129,7 +245,16 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * インターフェース宣言をパース
+   * Parses an interface declaration.
+   * 
+   * Handles:
+   * - Interface name
+   * - Extends clause (multiple interface inheritance)
+   * - Interface body with method signatures and constants
+   * 
+   * @private
+   * @returns The parsed interface declaration
+   * @throws ParseError if interface syntax is invalid
    */
   private parseInterfaceDeclaration(): AST.InterfaceDeclaration {
     const start = this.previous().location.start;
@@ -146,41 +271,22 @@ export class DeclarationParser extends StatementParser {
     const body: AST.InterfaceMember[] = [];
 
     while (!this.check(TokenKind.RightBrace) && !this.isAtEnd()) {
+      // Collect modifiers first
+      const modifiers = this.parseModifiers();
+
       // const
       if (this.match(TokenKind.Const)) {
-        // インターフェースではConstantDeclarationを使用
-        const start = this.previous().location.start;
-        const constants: AST.ConstDeclaration[] = [];
-
-        do {
-          const name = this.parseIdentifier();
-          this.consume(TokenKind.Equal, "Expected '=' after const name");
-          const value = this.parseExpression();
-
-          constants.push({
-            type: 'ConstDeclaration',
-            name,
-            value,
-            location: mergeLocations(name.location!, value.location!)
-          });
-        } while (this.match(TokenKind.Comma));
-
-        const end = this.consume(TokenKind.Semicolon, "Expected ';' after interface constant").location.end;
-
-        body.push({
-          type: 'ConstantDeclaration',
-          declarations: constants,
-          modifiers: ['public'],
-          location: createLocation(start, end)
-        });
-      } else {
+        // Parse interface constant using the same logic as class constants
+        // If no modifiers provided, default to public
+        const finalModifiers = modifiers.length > 0 ? modifiers : ['public'];
+        const constant = this.parseClassConstantWithModifiers(finalModifiers as ('public' | 'private' | 'protected' | 'final')[]);
+        body.push(constant);
+      } else if (this.match(TokenKind.Function)) {
         // method
-        const modifiers: string[] = [];
-        while (this.checkModifierToken()) {
-          modifiers.push(this.advance().text.toLowerCase());
+        // Interface methods are implicitly abstract
+        if (!modifiers.includes('abstract')) {
+          modifiers.push('abstract');
         }
-
-        this.consume(TokenKind.Function, "Expected 'function' in interface");
         const method = this.parseMethod(modifiers as AST.MethodModifier[]);
         body.push(method);
       }
@@ -198,7 +304,13 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * トレイト宣言をパース
+   * Parses a trait declaration.
+   * 
+   * Traits are a mechanism for code reuse in PHP.
+   * 
+   * @private
+   * @returns The parsed trait declaration
+   * @throws ParseError if trait syntax is invalid
    */
   private parseTraitDeclaration(): AST.TraitDeclaration {
     const start = this.previous().location.start;
@@ -217,7 +329,18 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * Enum宣言をパース
+   * Parses an enum declaration (PHP 8.1+).
+   * 
+   * Handles:
+   * - Enum name
+   * - Backed enums (int or string type)
+   * - Interface implementation
+   * - Enum cases with optional values
+   * - Methods and constants
+   * 
+   * @private
+   * @returns The parsed enum declaration
+   * @throws ParseError if enum syntax is invalid
    */
   private parseEnumDeclaration(): AST.EnumDeclaration {
     const start = this.previous().location.start;
@@ -278,22 +401,33 @@ export class DeclarationParser extends StatementParser {
       type: 'EnumDeclaration',
       name,
       scalarType,
-      implements: interfaces.length > 0 ? interfaces : undefined,
+      interfaces: interfaces.length > 0 ? interfaces : undefined,
       body,
       location: createLocation(start, end)
     };
   }
 
   /**
-   * namespace宣言をパース
+   * Parses a namespace declaration.
+   * 
+   * Handles both bracketed and unbracketed namespace syntax:
+   * - Bracketed: namespace Foo { ... }
+   * - Unbracketed: namespace Foo; ...
+   * 
+   * @protected
+   * @returns The parsed namespace declaration
+   * @throws ParseError if namespace syntax is invalid
    */
-  private parseNamespaceDeclaration(): AST.NamespaceDeclaration {
+  protected parseNamespaceDeclaration(): AST.NamespaceDeclaration {
     const start = this.previous().location.start;
     let name: AST.NameExpression | undefined;
 
     // Namespace name is optional (global namespace)
     if (!this.check(TokenKind.LeftBrace) && !this.check(TokenKind.Semicolon)) {
       name = this.parseNameExpression();
+    } else if (this.check(TokenKind.Semicolon)) {
+      // namespace; without a name is invalid
+      throw this.error(this.peek(), "Expected namespace name before ';'");
     }
 
     let statements: AST.Statement[] = [];
@@ -302,7 +436,7 @@ export class DeclarationParser extends StatementParser {
     if (this.match(TokenKind.LeftBrace)) {
       // Bracketed namespace
       while (!this.check(TokenKind.RightBrace) && !this.isAtEnd()) {
-        const stmt = this.parseStatement();
+        const stmt = this.parseDeclaration();
         if (stmt) statements.push(stmt);
       }
       end = this.consume(TokenKind.RightBrace, "Expected '}' after namespace body").location.end;
@@ -310,9 +444,9 @@ export class DeclarationParser extends StatementParser {
       // Unbracketed namespace
       this.consume(TokenKind.Semicolon, "Expected ';' or '{' after namespace name");
 
-      // Parse until end of file or next namespace
-      while (!this.isAtEnd() && !this.check(TokenKind.Namespace)) {
-        const stmt = this.parseStatement();
+      // Parse until end of file, next namespace, or PHP closing tag
+      while (!this.isAtEnd() && !this.check(TokenKind.Namespace) && !this.check(TokenKind.CloseTag)) {
+        const stmt = this.parseDeclaration();
         if (stmt) statements.push(stmt);
       }
 
@@ -330,7 +464,17 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * use文をパース
+   * Parses a use statement for importing namespaces.
+   * 
+   * Handles:
+   * - Simple use: use Foo\Bar;
+   * - Aliased use: use Foo\Bar as Baz;
+   * - Grouped use: use Foo\{Bar, Baz};
+   * - Function/const imports: use function foo; use const FOO;
+   * 
+   * @private
+   * @returns The parsed use statement
+   * @throws ParseError if use statement syntax is invalid
    */
   private parseUseStatement(): AST.UseStatement {
     const start = this.previous().location.start;
@@ -344,21 +488,104 @@ export class DeclarationParser extends StatementParser {
       kind = 'const';
     }
 
-    do {
-      const name = this.parseNameExpression();
-      let alias: AST.Identifier | undefined;
+    // Check for grouped use syntax: use Foo\{Bar, Baz}
+    const baseNameParts: string[] = [];
+    let isGrouped = false;
 
+    // Parse the base namespace part before '{'
+    while (!this.check(TokenKind.LeftBrace) && !this.check(TokenKind.Semicolon) && !this.check(TokenKind.Comma) && !this.check(TokenKind.As)) {
+      if (this.check(TokenKind.Identifier)) {
+        baseNameParts.push(this.advance().text);
+        if (this.check(TokenKind.Backslash)) {
+          this.advance(); // consume backslash
+        }
+      } else {
+        break;
+      }
+    }
+
+    // Check if this is grouped use
+    if (this.match(TokenKind.LeftBrace)) {
+      isGrouped = true;
+      
+      do {
+        // Check for function/const inside group
+        let itemKind = kind;
+        if (this.match(TokenKind.Function)) {
+          itemKind = 'function';
+        } else if (this.match(TokenKind.Const)) {
+          itemKind = 'const';
+        }
+
+        // Parse the item name
+        const itemNameParts = [...baseNameParts];
+        while (this.check(TokenKind.Identifier)) {
+          itemNameParts.push(this.advance().text);
+          if (this.check(TokenKind.Backslash)) {
+            this.advance();
+          }
+        }
+
+        let alias: AST.Identifier | undefined;
+        if (this.match(TokenKind.As)) {
+          alias = this.parseIdentifier();
+        }
+
+        const nameLocation = this.previous().location;
+        items.push({
+          type: 'UseItem',
+          name: {
+            type: 'NameExpression',
+            parts: itemNameParts,
+            location: nameLocation
+          },
+          alias,
+          kind: itemKind,
+          location: mergeLocations(nameLocation, alias?.location || nameLocation)
+        });
+      } while (this.match(TokenKind.Comma));
+
+      this.consume(TokenKind.RightBrace, "Expected '}' after grouped use items");
+    } else {
+      // Non-grouped use - restore the parsed name
+      if (baseNameParts.length === 0) {
+        baseNameParts.push(...this.parseNameExpression().parts);
+      }
+
+      let alias: AST.Identifier | undefined;
       if (this.match(TokenKind.As)) {
         alias = this.parseIdentifier();
       }
 
+      const nameLocation = this.previous().location;
       items.push({
         type: 'UseItem',
-        name,
+        name: {
+          type: 'NameExpression',
+          parts: baseNameParts,
+          location: nameLocation
+        },
         alias,
-        location: mergeLocations(name.location!, alias?.location || name.location!)
+        location: mergeLocations(nameLocation, alias?.location || nameLocation)
       });
-    } while (this.match(TokenKind.Comma));
+
+      // Handle multiple non-grouped use items
+      while (this.match(TokenKind.Comma)) {
+        const name = this.parseNameExpression();
+        let alias: AST.Identifier | undefined;
+
+        if (this.match(TokenKind.As)) {
+          alias = this.parseIdentifier();
+        }
+
+        items.push({
+          type: 'UseItem',
+          name,
+          alias,
+          location: mergeLocations(name.location!, alias?.location || name.location!)
+        });
+      }
+    }
 
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after use statement").location.end;
 
@@ -371,7 +598,14 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * const文をパース
+   * Parses a const statement for declaring constants.
+   * 
+   * Handles multiple constant declarations in a single statement:
+   * const FOO = 1, BAR = 2;
+   * 
+   * @private
+   * @returns The parsed const statement
+   * @throws ParseError if const syntax is invalid
    */
   private parseConstStatement(): AST.ConstStatement {
     const start = this.previous().location.start;
@@ -400,22 +634,49 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * 修飾子をパース
+   * Parses class member modifiers.
+   * 
+   * Handles visibility modifiers (public, private, protected)
+   * and other modifiers (static, abstract, final, readonly).
+   * Validates against duplicate and conflicting modifiers.
+   * 
+   * @private
+   * @returns Array of modifier strings
+   * @throws ParseError if invalid modifier combination is found
    */
   private parseModifiers(): string[] {
     const modifiers: string[] = [];
+    const modifierSet = new Set<string>();
 
-    while (this.checkModifierToken()) {
-      modifiers.push(this.advance().text.toLowerCase());
+    while (this.checkClassModifierToken()) {
+      const modifier = this.advance().text.toLowerCase();
+      
+      // Check for duplicate visibility modifiers
+      if (modifier === 'public' || modifier === 'private' || modifier === 'protected') {
+        if (modifierSet.has('public') || modifierSet.has('private') || modifierSet.has('protected')) {
+          throw this.error(this.previous(), "Cannot use multiple visibility modifiers");
+        }
+      }
+      
+      // Check for any duplicate modifier
+      if (modifierSet.has(modifier)) {
+        throw this.error(this.previous(), `Duplicate modifier '${modifier}'`);
+      }
+      
+      modifiers.push(modifier);
+      modifierSet.add(modifier);
     }
 
     return modifiers;
   }
 
   /**
-   * 修飾子かチェック
+   * Checks if the current token is a valid class/method/property modifier.
+   * 
+   * @private
+   * @returns True if the current token is a modifier, false otherwise
    */
-  private checkModifierToken(): boolean {
+  private checkClassModifierToken(): boolean {
     const kind = this.peek().kind;
     return kind === TokenKind.Public ||
       kind === TokenKind.Private ||
@@ -427,7 +688,16 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * トレイトボディをパース
+   * Parses the body of a trait declaration.
+   * 
+   * Trait bodies can contain:
+   * - Methods
+   * - Properties
+   * - Use statements (for trait composition)
+   * 
+   * @private
+   * @returns Array of trait members
+   * @throws ParseError if invalid trait member is encountered
    */
   private parseTraitBody(): AST.TraitMember[] {
     const members: AST.TraitMember[] = [];
@@ -440,7 +710,7 @@ export class DeclarationParser extends StatementParser {
 
         if (this.match(TokenKind.Function)) {
           members.push(this.parseMethod(modifiers as AST.MethodModifier[]));
-        } else if (this.check(TokenKind.Variable)) {
+        } else if (this.check(TokenKind.Variable) || this.checkType()) {
           members.push(this.parseProperty(modifiers as ('public' | 'private' | 'protected' | 'static' | 'readonly')[]));
         } else {
           throw this.error(this.peek(), "Expected method or property in trait body");
@@ -452,33 +722,57 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * クラスボディをパース
+   * Parses the body of a class declaration.
+   * 
+   * Class bodies can contain:
+   * - Properties
+   * - Methods
+   * - Constants
+   * - Trait use statements
+   * 
+   * @protected
+   * @returns Array of class members
+   * @throws ParseError if invalid class member is encountered
    */
-  private parseClassBody(): AST.ClassMember[] {
+  protected parseClassBody(): AST.ClassMember[] {
     const members: AST.ClassMember[] = [];
 
     while (!this.check(TokenKind.RightBrace) && !this.isAtEnd()) {
       const member = this.parseClassMember();
-      if (member) members.push(member);
+      if (member) {
+        members.push(member);
+      } else {
+        // If parseClassMember returns null, skip the current token to avoid infinite loop
+        if (!this.check(TokenKind.RightBrace)) {
+          this.advance();
+        }
+      }
     }
 
     return members;
   }
 
   /**
-   * クラスメンバーをパース
+   * Parses a single class member.
+   * 
+   * Determines the type of member based on keywords and modifiers:
+   * - Trait use statements
+   * - Constants (with visibility modifiers)
+   * - Methods
+   * - Properties (typed or untyped)
+   * 
+   * @protected
+   * @returns The parsed class member or null if none found
+   * @throws ParseError if invalid syntax is encountered
    */
-  private parseClassMember(): AST.ClassMember | null {
+  protected parseClassMember(): AST.ClassMember | null {
     // Trait use
     if (this.match(TokenKind.Use)) {
       return this.parseTraitUse();
     }
 
     // Modifiers
-    const modifiers: string[] = [];
-    while (this.checkModifierToken()) {
-      modifiers.push(this.advance().text.toLowerCase());
-    }
+    const modifiers = this.parseModifiers();
 
     // Const with modifiers
     if (this.match(TokenKind.Const)) {
@@ -500,11 +794,28 @@ export class DeclarationParser extends StatementParser {
       return this.parseProperty(modifiers as AST.PropertyModifier[]);
     }
 
+    // If we have modifiers but no recognized member type, there's an error
+    if (modifiers.length > 0) {
+      throw this.error(this.peek(), `Unexpected token after modifiers: ${this.peek().text}`);
+    }
+
     return null;
   }
 
   /**
-   * trait use をパース
+   * Parses a trait use statement within a class.
+   * 
+   * Handles:
+   * - Simple trait use: use TraitA, TraitB;
+   * - Trait adaptations with aliases and precedence:
+   *   use TraitA {
+   *     method as private aliasMethod;
+   *     TraitA::method insteadof TraitB;
+   *   }
+   * 
+   * @private
+   * @returns The parsed trait use statement
+   * @throws ParseError if trait use syntax is invalid
    */
   private parseTraitUse(): AST.TraitUse {
     const start = this.tokens[this.current - 1].location.start;
@@ -520,18 +831,65 @@ export class DeclarationParser extends StatementParser {
       adaptations = [];
 
       while (!this.check(TokenKind.RightBrace) && !this.isAtEnd()) {
-        const trait = this.parseNameExpression();
-        this.consume(TokenKind.DoubleColon, "Expected '::' in trait adaptation");
-        const method = this.parseIdentifier();
+        // Check if this is a method-only adaptation (no trait specified)
+        let trait: AST.NameExpression | undefined;
+        let method: AST.Identifier;
+        
+        // Try to parse trait::method or just method
+        const savedPos = this.current;
+        
+        // First, check if we have an identifier followed by :: 
+        // Skip whitespace
+        while (this.peek().kind === TokenKind.Whitespace || 
+               this.peek().kind === TokenKind.Newline ||
+               this.peek().kind === TokenKind.Comment) {
+          this.advance();
+        }
+        
+        if (this.check(TokenKind.Identifier)) {
+          const firstIdentifier = this.advance();
+          
+          // Skip whitespace after identifier
+          while (this.peek().kind === TokenKind.Whitespace || 
+                 this.peek().kind === TokenKind.Newline ||
+                 this.peek().kind === TokenKind.Comment) {
+            this.advance();
+          }
+          
+          if (this.check(TokenKind.DoubleColon)) {
+            // It's trait::method format, parse the full name expression
+            this.current = savedPos;
+            trait = this.parseNameExpression();
+            this.consume(TokenKind.DoubleColon, "Expected '::' after trait name");
+            method = this.parseIdentifier();
+          } else {
+            // It's just a method name
+            method = {
+              type: 'Identifier',
+              name: firstIdentifier.text,
+              location: firstIdentifier.location
+            };
+          }
+        } else {
+          throw this.error(this.peek(), "Expected method name in trait adaptation");
+        }
 
         if (this.match(TokenKind.As)) {
           // Alias
           let visibility: AST.Visibility | undefined;
+          let alias: AST.Identifier = method; // Default alias is the method itself
+          
           if (this.match(TokenKind.Public)) visibility = 'public';
           else if (this.match(TokenKind.Protected)) visibility = 'protected';
           else if (this.match(TokenKind.Private)) visibility = 'private';
 
-          const alias = visibility ? this.parseIdentifier() : method;
+          // If we have a visibility modifier, the next token should be the alias name
+          if (visibility && this.check(TokenKind.Identifier)) {
+            alias = this.parseIdentifier();
+          } else if (!visibility && this.check(TokenKind.Identifier)) {
+            // No visibility modifier, but we have an alias name
+            alias = this.parseIdentifier();
+          }
 
           adaptations.push({
             type: 'TraitAlias',
@@ -539,10 +897,14 @@ export class DeclarationParser extends StatementParser {
             method,
             visibility,
             alias,
-            location: mergeLocations(trait.location!, alias.location!)
+            location: mergeLocations(trait?.location || method.location!, alias.location!)
           });
         } else if (this.match(TokenKind.Insteadof)) {
-          // Precedence
+          // Precedence - trait is required for insteadof
+          if (!trait) {
+            throw this.error(this.previous(), "Trait name is required before '::' when using 'insteadof'");
+          }
+          
           const insteadof: AST.NameExpression[] = [];
           do {
             insteadof.push(this.parseNameExpression());
@@ -579,37 +941,84 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * クラス定数をパース（修飾子付き）
+   * Parses a class constant declaration with visibility modifiers.
+   * 
+   * Supports:
+   * - Visibility modifiers (public, private, protected)
+   * - Final modifier
+   * - Typed constants (PHP 8.3+)
+   * 
+   * @private
+   * @param modifiers - Pre-parsed visibility and final modifiers
+   * @returns The parsed constant declaration
+   * @throws ParseError if constant syntax is invalid
    */
-  private parseClassConstantWithModifiers(modifiers: ('public' | 'private' | 'protected' | 'final')[]): AST.ClassConstant {
+  private parseClassConstantWithModifiers(modifiers: ('public' | 'private' | 'protected' | 'final')[]): AST.ConstantDeclaration {
     const start = modifiers.length > 0 
       ? this.tokens[this.current - modifiers.length - 1].location.start
       : this.tokens[this.current - 1].location.start;
-    const constants: Array<{ name: AST.Identifier; value: AST.Expression }> = [];
+    // Check for typed constant (PHP 8.3+)
+    let typeAnnotation: AST.TypeNode | undefined;
+    let name: AST.Identifier;
+    
+    // Look ahead to see if this is a typed constant
+    // Pattern: const <type> <name> = <value>
+    if (this.check(TokenKind.Identifier)) {
+      const saved = this.current;
+      const firstIdentifier = this.advance();
+      
+      // If next token is also an identifier, first was the type
+      if (this.check(TokenKind.Identifier)) {
+        // This is a typed constant
+        typeAnnotation = {
+          type: 'SimpleType',
+          name: firstIdentifier.text,
+          location: firstIdentifier.location
+        };
+        name = this.parseIdentifier();
+      } else {
+        // Not a typed constant, rewind
+        this.current = saved;
+        name = this.parseIdentifier();
+      }
+    } else {
+      name = this.parseIdentifier();
+    }
+    
+    this.consume(TokenKind.Equal, "Expected '=' after const name");
+    const value = this.parseExpression();
 
-    do {
-      const name = this.parseIdentifier();
-      this.consume(TokenKind.Equal, "Expected '=' after const name");
-      const value = this.parseExpression();
-
-      constants.push({
-        name,
-        value
-      });
-    } while (this.match(TokenKind.Comma));
+    // For now, we only support single constant declarations
+    // Multiple declarations in one statement are not common in modern PHP
+    if (this.check(TokenKind.Comma)) {
+      throw this.error(this.peek(), "Multiple constant declarations in one statement are not supported");
+    }
 
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after class constant").location.end;
 
     return {
-      type: 'ClassConstant',
-      constants,
+      type: 'ConstantDeclaration',
+      name,
+      value,
+      typeAnnotation,
       modifiers: modifiers.length > 0 ? modifiers : ['public'], // Default to public if no modifiers
       location: createLocation(start, end)
     };
   }
 
   /**
-   * メソッドをパース
+   * Parses a method declaration.
+   * 
+   * Handles:
+   * - Method modifiers (visibility, static, abstract, final)
+   * - Reference return (&)
+   * - Parameter list
+   * - Return type declaration
+   * - Method body (or semicolon for abstract methods)
+   * 
+   * @param modifiers - Pre-parsed method modifiers
+   * @returns The parsed method declaration
+   * @throws ParseError if method syntax is invalid
    */
   parseMethod(modifiers: AST.MethodModifier[]): AST.MethodDeclaration {
     const start = this.previous().location.start;
@@ -644,7 +1053,17 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * プロパティをパース
+   * Parses a property declaration.
+   * 
+   * Supports:
+   * - Property modifiers (visibility, static, readonly)
+   * - Type declarations (PHP 7.4+)
+   * - Property initializers
+   * 
+   * @private
+   * @param modifiers - Pre-parsed property modifiers
+   * @returns The parsed property declaration
+   * @throws ParseError if property syntax is invalid
    */
   private parseProperty(modifiers: ('public' | 'private' | 'protected' | 'static' | 'readonly')[]): AST.PropertyDeclaration {
     const start = modifiers.length > 0
@@ -657,17 +1076,18 @@ export class DeclarationParser extends StatementParser {
       typeAnnotation = this.parseType();
     }
 
-    // PHPでは一度に一つのプロパティしか宣言できないので、直接PropertyDeclarationを作成
+    // PHP only allows one property per declaration, create PropertyDeclaration directly
 
+    this.consume(TokenKind.Variable, "Expected property variable");
     const varExpr = this.parseVariable();
-    // VariableExpression から property 名を取得
+    // Extract property name from VariableExpression
     if (varExpr.type !== 'VariableExpression' || typeof varExpr.name !== 'string') {
       throw this.error(this.peek(), 'Property name must be a simple variable');
     }
 
     const name: AST.Identifier = {
       type: 'Identifier',
-      name: varExpr.name.substring(1), // $ を除去
+      name: varExpr.name,
       location: varExpr.location
     };
 
@@ -690,159 +1110,24 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * パラメータリストをパース
+   * Parses a list of function/method parameters.
+   * 
+   * @protected
+   * @returns Array of parsed parameters
    */
   protected parseParameterList(): AST.Parameter[] {
     const parameters: AST.Parameter[] = [];
 
-    while (!this.check(TokenKind.RightParen) && !this.isAtEnd()) {
-      parameters.push(this.parseParameter());
-
-      if (!this.check(TokenKind.RightParen)) {
-        this.consume(TokenKind.Comma, "Expected ',' after parameter");
-      }
+    if (!this.check(TokenKind.RightParen)) {
+      do {
+        parameters.push(this.parseParameter());
+      } while (this.match(TokenKind.Comma));
     }
 
     return parameters;
   }
 
-  /**
-   * パラメータをパース
-   */
-  private parseParameter(): AST.Parameter {
-    const start = this.peek().location.start;
-
-    // Promoted properties (PHP 8.0+)
-    const promoted: AST.PropertyModifier[] = [];
-    while (this.match(TokenKind.Public, TokenKind.Protected, TokenKind.Private, TokenKind.Readonly)) {
-      promoted.push(this.previous().text.toLowerCase() as AST.PropertyModifier);
-    }
-
-    // Type
-    let typeAnnotation: AST.TypeNode | undefined;
-    if (!this.check(TokenKind.Ellipsis) && !this.check(TokenKind.Ampersand) && !this.check(TokenKind.Variable)) {
-      typeAnnotation = this.parseType();
-    }
-
-    // By reference
-    const byReference = this.match(TokenKind.Ampersand);
-
-    // Variadic
-    const variadic = this.match(TokenKind.Ellipsis);
-
-    // Name
-    const name = this.parseVariable();
-
-    // Default value
-    let defaultValue: AST.Expression | undefined;
-    if (this.match(TokenKind.Equal)) {
-      defaultValue = this.parseExpression();
-    }
-
-    const end = defaultValue?.location?.end || name.location!.end;
-
-    return {
-      type: 'Parameter',
-      name,
-      typeAnnotation,
-      defaultValue,
-      byReference,
-      variadic,
-      promoted: promoted.length > 0 ? promoted : undefined,
-      location: createLocation(start, end)
-    };
-  }
-
-  /**
-   * 型をパース
-   */
-  parseType(): AST.TypeNode {
-    const start = this.peek().location.start;
-
-    // Nullable type
-    if (this.match(TokenKind.Question)) {
-      const typeAnnotation = this.parseType();
-      return {
-        type: 'NullableType',
-        typeAnnotation,
-        location: createLocation(start, typeAnnotation.location!.end)
-      };
-    }
-
-    // Union/Intersection types
-    let types: AST.TypeNode[] = [];
-    types.push(this.parseSingleType());
-
-    // Union type (|)
-    if (this.check(TokenKind.Pipe)) {
-      while (this.match(TokenKind.Pipe)) {
-        types.push(this.parseSingleType());
-      }
-
-      return {
-        type: 'UnionType',
-        types,
-        location: createLocation(start, types[types.length - 1].location!.end)
-      };
-    }
-
-    // Intersection type (&)
-    if (this.check(TokenKind.Ampersand)) {
-      while (this.match(TokenKind.Ampersand)) {
-        types.push(this.parseSingleType());
-      }
-
-      return {
-        type: 'IntersectionType',
-        types,
-        location: createLocation(start, types[types.length - 1].location!.end)
-      };
-    }
-
-    return types[0];
-  }
-
-  /**
-   * 単一型をパース
-   */
-  private parseSingleType(): AST.TypeNode {
-
-    // Array type
-    if (this.match(TokenKind.Array)) {
-      return {
-        type: 'ArrayType',
-        elementType: { type: 'SimpleType', name: 'mixed' } as AST.SimpleType,
-        location: this.previous().location
-      };
-    }
-
-    // Callable type
-    if (this.match(TokenKind.Callable)) {
-      return {
-        type: 'CallableType',
-        location: this.previous().location
-      };
-    }
-
-    // Named type
-    const name = this.parseNameExpression();
-
-    return {
-      type: 'SimpleType',
-      name: name.parts.join('\\'),
-      location: name.location
-    } as AST.SimpleType;
-  }
 
 
-  /**
-   * 型の開始をチェック
-   */
-  private checkType(): boolean {
-    return this.check(TokenKind.Array) ||
-      this.check(TokenKind.Callable) ||
-      this.check(TokenKind.Question) ||
-      this.check(TokenKind.Identifier) ||
-      this.check(TokenKind.Backslash);
-  }
+
 }

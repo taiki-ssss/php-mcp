@@ -348,7 +348,7 @@ describe('Parser - Expressions', () => {
       const expr = getFirstExpression('<?php foo(); ?>');
       expect(expr.type).toBe('CallExpression');
       if (expr.type === 'CallExpression') {
-        expect(expr.callee.type).toBe('Identifier');
+        expect(expr.callee.type).toBe('NameExpression');
         expect(expr.arguments).toHaveLength(0);
       }
     });
@@ -390,8 +390,8 @@ describe('Parser - Expressions', () => {
       expect(expr.type).toBe('CallExpression');
       if (expr.type === 'CallExpression') {
         expect(expr.arguments).toHaveLength(2);
-        expect(expr.arguments[0].name).toBe('name');
-        expect(expr.arguments[1].name).toBe('age');
+        expect(expr.arguments[0].name?.name).toBe('name');
+        expect(expr.arguments[1].name?.name).toBe('age');
       }
     });
 
@@ -460,7 +460,7 @@ describe('Parser - Expressions', () => {
 
   describe('New expressions', () => {
     test('should parse simple new expression', () => {
-      const expr = getFirstExpression('<?php new Class(); ?>');
+      const expr = getFirstExpression('<?php new MyClass(); ?>');
       expect(expr.type).toBe('NewExpression');
       if (expr.type === 'NewExpression') {
         expect(expr.callee.type).toBe('Identifier');
@@ -469,7 +469,7 @@ describe('Parser - Expressions', () => {
     });
 
     test('should parse new expression with arguments', () => {
-      const expr = getFirstExpression('<?php new Class($a, $b); ?>');
+      const expr = getFirstExpression('<?php new MyClass($a, $b); ?>');
       expect(expr.type).toBe('NewExpression');
       if (expr.type === 'NewExpression') {
         expect(expr.arguments).toHaveLength(2);

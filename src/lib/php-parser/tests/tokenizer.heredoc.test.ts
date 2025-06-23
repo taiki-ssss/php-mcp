@@ -22,7 +22,6 @@ EOD;
       t.kind !== TokenKind.OpenTag
     );
 
-    console.log('Relevant tokens:', relevantTokens.map((t, i) => `[${i}] ${t.kind}: "${t.text}"`));
 
     expect(relevantTokens[0]).toMatchObject({ kind: TokenKind.Variable, text: '$str' });
     expect(relevantTokens[1]).toMatchObject({ kind: TokenKind.Equal, text: '=' });
