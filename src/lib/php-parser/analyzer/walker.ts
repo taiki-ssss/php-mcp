@@ -470,8 +470,7 @@ function transformChildren(
         const childContext: WalkContext = {
           parents: [...parentContext.parents, node],
           depth: parentContext.depth + 1,
-          userContext: parentContext.userContext,
-          parent: node
+          userContext: parentContext.userContext
         };
         const result = transform(value, transformer, childContext);
         transformed[key] = result;
@@ -483,8 +482,7 @@ function transformChildren(
             const childContext: WalkContext = {
               parents: [...parentContext.parents, node],
               depth: parentContext.depth + 1,
-              userContext: parentContext.userContext,
-              parent: node
+              userContext: parentContext.userContext
             };
             const result = transform(item, transformer, childContext);
             if (result !== null) {

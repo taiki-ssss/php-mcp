@@ -10,7 +10,6 @@
 import { TokenKind } from '../core/token.js';
 import * as AST from '../core/ast.js';
 import { createLocation, mergeLocations } from '../core/location.js';
-import { ParserBase } from './base.js';
 import { ExpressionParser } from './expression.js';
 
 /**
@@ -35,13 +34,13 @@ export class StatementParser extends ExpressionParser {
    * @throws ParseError if an invalid statement is encountered
    */
   parseStatement(): AST.Statement | null {
-    while (this.peek().kind === TokenKind.Whitespace || 
-           this.peek().kind === TokenKind.Newline ||
-           this.peek().kind === TokenKind.Comment ||
-           this.peek().kind === TokenKind.DocComment) {
+    while (this.peek().kind === TokenKind.Whitespace ||
+      this.peek().kind === TokenKind.Newline ||
+      this.peek().kind === TokenKind.Comment ||
+      this.peek().kind === TokenKind.DocComment) {
       this.advance();
     }
-    
+
     if (this.check(TokenKind.LeftBrace)) {
       return this.parseBlockStatement();
     }
@@ -197,7 +196,7 @@ export class StatementParser extends ExpressionParser {
       this.consume(TokenKind.RightParen, "Expected ')' after elseif condition");
       const elseifConsequent = this.parseStatement()!;
       const elseifEnd = elseifConsequent.location!.end;
-      
+
       elseifs.push({
         type: 'ElseIfClause',
         test: elseifTest,
@@ -297,7 +296,7 @@ export class StatementParser extends ExpressionParser {
       do {
         exprs.push(this.parseExpression());
       } while (this.match(TokenKind.Comma));
-      
+
       if (exprs.length === 1) {
         init = exprs[0];
       } else {
@@ -325,7 +324,7 @@ export class StatementParser extends ExpressionParser {
       do {
         exprs.push(this.parseExpression());
       } while (this.match(TokenKind.Comma));
-      
+
       if (exprs.length === 1) {
         update = exprs[0];
       } else {
@@ -809,16 +808,16 @@ export class StatementParser extends ExpressionParser {
    */
   private parseDeclareStatement(): AST.DeclareStatement {
     const start = this.previous().location.start;
-    
+
     this.consume(TokenKind.LeftParen, "Expected '(' after 'declare'");
     const directives: AST.DeclareDirective[] = [];
-    
+
     do {
       const nameToken = this.consume(TokenKind.Identifier, "Expected directive name");
       const name = String(nameToken.value || nameToken.text || '');
       this.consume(TokenKind.Equal, "Expected '=' after directive name");
       const value = this.parseExpression();
-      
+
       directives.push({
         type: 'DeclareDirective',
         name,
@@ -826,18 +825,18 @@ export class StatementParser extends ExpressionParser {
         location: mergeLocations(nameToken.location, value.location!)
       });
     } while (this.match(TokenKind.Comma));
-    
+
     this.consume(TokenKind.RightParen, "Expected ')' after declare directives");
-    
+
     let body: AST.Statement | null = null;
     if (this.check(TokenKind.LeftBrace)) {
       body = this.parseBlockStatement();
     } else {
       this.consume(TokenKind.Semicolon, "Expected ';' or '{' after declare");
     }
-    
+
     const end = body?.location?.end || this.previous().location.end;
-    
+
     return {
       type: 'DeclareStatement',
       directives,

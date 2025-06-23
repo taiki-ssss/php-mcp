@@ -88,7 +88,7 @@ describe('AST Helpers', () => {
       
       transform(ast, {
         IfStatement: (node, context) => {
-          contextParentType = context.parent?.type;
+          contextParentType = context.parents[context.parents.length - 1]?.type;
           return node;
         }
       });
