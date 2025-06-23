@@ -54,6 +54,18 @@ export abstract class ParserBase {
    * 現在のトークンを取得
    */
   protected peek(): Token {
+    if (this.current >= this.tokens.length) {
+      // Return EOF token if we're at the end
+      return {
+        kind: TokenKind.EOF,
+        text: '',
+        type: 'T_EOF',
+        value: '',
+        location: this.tokens.length > 0 
+          ? this.tokens[this.tokens.length - 1].location 
+          : createLocation({ line: 1, column: 0, offset: 0 }, { line: 1, column: 0, offset: 0 })
+      };
+    }
     return this.tokens[this.current];
   }
 
@@ -61,6 +73,16 @@ export abstract class ParserBase {
    * 前のトークンを取得
    */
   protected previous(): Token {
+    if (this.current - 1 < 0 || this.current - 1 >= this.tokens.length) {
+      // Return a dummy token if out of bounds
+      return {
+        kind: TokenKind.EOF,
+        text: '',
+        type: 'T_EOF',
+        value: '',
+        location: createLocation({ line: 1, column: 0, offset: 0 }, { line: 1, column: 0, offset: 0 })
+      };
+    }
     return this.tokens[this.current - 1];
   }
 
@@ -68,7 +90,7 @@ export abstract class ParserBase {
    * 終端に達しているか
    */
   protected isAtEnd(): boolean {
-    return this.peek().kind === TokenKind.EOF;
+    return this.current >= this.tokens.length || this.peek().kind === TokenKind.EOF;
   }
 
   /**
@@ -157,7 +179,7 @@ export abstract class ParserBase {
    * 変数をパース
    */
   protected parseVariable(): AST.VariableExpression {
-    const token = this.consume(TokenKind.Variable, "Expected variable");
+    const token = this.previous(); // Variable token was already consumed by match()
     return {
       type: 'VariableExpression',
       name: token.text.substring(1), // Remove $

@@ -28,16 +28,18 @@ export { StatementParser } from './parser/statement.js';
 export { DeclarationParser } from './parser/declaration.js';
 
 // Analyzer exports
-export { walk, findNodes, findFirst, transform, is, type WalkResult, type WalkerFunction, type WalkContext } from './analyzer/walker.js';
-
-// Analyzer utilities
+export { walk, walkAsync, findNodes, findFirst, is, type WalkResult, type WalkerFunction, type WalkContext } from './analyzer/walker.js';
 export * from './analyzer/visitor.js';
 export * from './analyzer/transformer.js';
 
+// Utils exports
+export { Result, ok, err, isOk, isErr } from '../utils/result.js';
+
 import { tokenize, type TokenizerOptions } from './lexer/tokenizer.js';
 import { parse, type ParserOptions } from './parser/parser.js';
-import type { Statement } from './core/ast.js';
+import type { Program } from './core/ast.js';
 import type { Token } from './core/token.js';
+import { Result, ok, err } from '../utils/result.js';
 
 /**
  * PHP コードをトークン化
@@ -50,8 +52,13 @@ import type { Token } from './core/token.js';
 export function tokenizePhp(
   source: string,
   options?: TokenizerOptions
-): Token[] {
-  return tokenize(source, options);
+): Result<Token[]> {
+  try {
+    const tokens = tokenize(source, options);
+    return ok(tokens);
+  } catch (error) {
+    return err(error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
@@ -65,10 +72,18 @@ export function tokenizePhp(
 export function parsePhp(
   source: string,
   options?: ParserOptions & TokenizerOptions
-): Statement[] {
-  const tokens = tokenize(source, options);
-  const program = parse(tokens, options);
-  return program.statements;
+): Result<Program> {
+  try {
+    const tokens = tokenize(source, options);
+    // Filter out whitespace and newline tokens before parsing
+    const nonWhitespaceTokens = tokens.filter(t => 
+      t.kind !== 'Whitespace' && t.kind !== 'Newline'
+    );
+    const program = parse(nonWhitespaceTokens, options);
+    return ok(program);
+  } catch (error) {
+    return err(error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
@@ -176,15 +191,25 @@ export function pipeAsync(...fns: Function[]): (value: any) => Promise<any> {
  * );
  * ```
  */
-export function tryPipe<T, R>(
-  pipeline: (input: T) => R,
-  errorHandler: (error: unknown) => R
-): (input: T) => R {
-  return (input: T) => {
+export function tryPipe<A, B>(
+  fn1: (a: A) => B
+): (a: A) => Result<B>;
+export function tryPipe<A, B, C>(
+  fn1: (a: A) => B,
+  fn2: (b: B) => C
+): (a: A) => Result<C>;
+export function tryPipe<A, B, C, D>(
+  fn1: (a: A) => B,
+  fn2: (b: B) => C,
+  fn3: (c: C) => D
+): (a: A) => Result<D>;
+export function tryPipe(...fns: Function[]): Function {
+  return (value: any): Result<any> => {
     try {
-      return pipeline(input);
+      const result = fns.reduce((acc, fn) => fn(acc), value);
+      return ok(result);
     } catch (error) {
-      return errorHandler(error);
+      return err(error instanceof Error ? error.message : String(error));
     }
   };
 }

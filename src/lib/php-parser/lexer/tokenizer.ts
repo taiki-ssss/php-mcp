@@ -4,7 +4,7 @@
  */
 
 import { Token, TokenKind, KEYWORDS, createToken } from '../core/token.js';
-import { SourceLocation, SourcePosition, createLocation } from '../core/location.js';
+import { SourcePosition, createLocation } from '../core/location.js';
 import { Scanner, CharUtils } from './scanner.js';
 
 /**
@@ -26,12 +26,17 @@ export class Tokenizer {
   private scanner: Scanner;
   private options: Required<TokenizerOptions>;
   private inPhpTag = false;
+  private pendingHeredoc: {
+    label: string;
+    isNowdoc: boolean;
+    startToken: Token;
+  } | null = null;
 
   constructor(source: string, options: TokenizerOptions = {}) {
     this.scanner = new Scanner(source);
     this.options = {
       preserveComments: options.preserveComments ?? true,
-      preserveWhitespace: options.preserveWhitespace ?? false,
+      preserveWhitespace: options.preserveWhitespace ?? true,
       preserveInlineHTML: options.preserveInlineHTML ?? true
     };
   }
@@ -53,13 +58,7 @@ export class Tokenizer {
       tokens.push(token);
     }
 
-    // EOF トークンを追加
-    const eofPos = this.scanner.getCurrentPosition();
-    tokens.push(createToken(
-      TokenKind.EOF,
-      '',
-      createLocation(eofPos, eofPos)
-    ));
+    // EOF トークンを追加しない（PHP互換性のため）
 
     return tokens;
   }
@@ -87,6 +86,12 @@ export class Tokenizer {
    */
   private nextToken(): Token {
     const start = this.scanner.getCurrentPosition();
+
+    // Heredoc/Nowdocの内容処理中
+    if (this.pendingHeredoc) {
+      const content = this.scanHeredocContent();
+      if (content) return content;
+    }
 
     // PHP タグ外の処理
     if (!this.inPhpTag) {
@@ -124,8 +129,12 @@ export class Tokenizer {
       }
     }
 
-    // # コメント
+    // # コメントまたは属性
     if (char === '#') {
+      // 属性のチェック（#[）
+      if (this.scanner.peek(1) === '[') {
+        return this.scanAttribute(start);
+      }
       return this.scanHashComment(start);
     }
 
@@ -144,8 +153,8 @@ export class Tokenizer {
       return this.scanHeredoc(start);
     }
 
-    // 数値
-    if (CharUtils.isDigit(char)) {
+    // 数値（.25のような小数点で始まる数値も対応）
+    if (CharUtils.isDigit(char) || (char === '.' && CharUtils.isDigit(this.scanner.peek(1)))) {
       return this.scanNumber(start);
     }
 
@@ -170,22 +179,37 @@ export class Tokenizer {
     // <?php タグをチェック
     if (this.scanner.matches('<?php')) {
       this.scanner.skip(5);
+      // タグの後の空白文字を含める
+      let tagText = '<?php';
+      if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
+        tagText += this.scanner.advance();
+      }
       this.inPhpTag = true;
-      return this.makeToken(TokenKind.OpenTag, '<?php', start);
+      return this.makeToken(TokenKind.OpenTag, tagText, start);
     }
 
     // <?= タグをチェック
     if (this.scanner.matches('<?=')) {
       this.scanner.skip(3);
+      // タグの後の空白文字を含める
+      let tagText = '<?=';
+      if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
+        tagText += this.scanner.advance();
+      }
       this.inPhpTag = true;
-      return this.makeToken(TokenKind.OpenTagEcho, '<?=', start);
+      return this.makeToken(TokenKind.OpenTagEcho, tagText, start);
     }
 
     // <? タグをチェック（short_open_tag）
     if (this.scanner.matches('<?') && !this.scanner.matches('<?xml')) {
       this.scanner.skip(2);
+      // タグの後の空白文字を含める
+      let tagText = '<?';
+      if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
+        tagText += this.scanner.advance();
+      }
       this.inPhpTag = true;
-      return this.makeToken(TokenKind.OpenTag, '<?', start);
+      return this.makeToken(TokenKind.OpenTag, tagText, start);
     }
 
     // インライン HTML
@@ -245,18 +269,16 @@ export class Tokenizer {
    */
   private scanString(start: SourcePosition): Token {
     const quote = this.scanner.advance();
-    let value = '';
     let raw = quote;
 
     while (!this.scanner.isAtEnd() && this.scanner.peek() !== quote) {
       if (this.scanner.peek() === '\\') {
         raw += this.scanner.advance();
-        raw += this.scanner.advance();
-        // エスケープシーケンスの処理は後で
+        if (!this.scanner.isAtEnd()) {
+          raw += this.scanner.advance();
+        }
       } else {
-        const char = this.scanner.advance();
-        value += char;
-        raw += char;
+        raw += this.scanner.advance();
       }
     }
 
@@ -267,8 +289,7 @@ export class Tokenizer {
     return createToken(
       TokenKind.String,
       raw,
-      createLocation(start, this.scanner.getCurrentPosition()),
-      { value, quote: quote as '"' | "'" }
+      createLocation(start, this.scanner.getCurrentPosition())
     );
   }
 
@@ -283,6 +304,7 @@ export class Tokenizer {
    * Heredoc/Nowdoc
    */
   private scanHeredoc(start: SourcePosition): Token {
+    // Heredoc/Nowdocのラベルを解析
     this.scanner.skip(3); // <<<
     this.scanner.consumeWhile(char => CharUtils.isWhitespace(char));
 
@@ -293,28 +315,70 @@ export class Tokenizer {
 
     if (isNowdoc) this.scanner.consume("'");
 
-    // 改行まで読み飛ばす
-    this.scanner.consumeUntil(char => CharUtils.isNewline(char));
-    this.scanner.advance();
+    const startText = `<<<${isNowdoc ? "'" : ""}${label}${isNowdoc ? "'" : ""}`;
 
-    // 終了ラベルまで読む
+    // 改行まで読み飛ばす
+    this.scanner.consumeUntil((char: string) => CharUtils.isNewline(char));
+    if (!this.scanner.isAtEnd()) this.scanner.advance();
+
+    // StartHeredocトークンを作成
+    const startToken = createToken(
+      TokenKind.StartHeredoc,
+      startText,
+      createLocation(start, this.scanner.getCurrentPosition())
+    );
+
+    // Heredoc/Nowdocの内容を保存
+    this.pendingHeredoc = {
+      label,
+      isNowdoc,
+      startToken
+    };
+
+    return startToken;
+  }
+
+  /**
+   * Heredoc/Nowdocの内容をスキャン
+   */
+  private scanHeredocContent(): Token | null {
+    if (!this.pendingHeredoc) return null;
+
+    const { label } = this.pendingHeredoc;
+    const start = this.scanner.getCurrentPosition();
+
+    // 内容を収集
     let content = '';
-    let lineStart = true;
+    let lineStart = this.scanner.getCurrentPosition().column === 1;
 
     while (!this.scanner.isAtEnd()) {
       // 行頭でのみ終了ラベルをチェック
       if (lineStart && this.scanner.matches(label)) {
-        // 行頭の終了ラベルをチェック
         const savedState = this.scanner.save();
         this.scanner.skip(label.length);
 
         // ラベルの後は改行か ; のみ許可
         const next = this.scanner.peek();
         if (CharUtils.isNewline(next) || next === ';') {
-          this.scanner.restore(savedState);
-          this.scanner.skip(label.length);
-          if (next === ';') this.scanner.advance();
-          break;
+          // 終了ラベルの前に内容があれば、それを返す
+          if (content.length > 0) {
+            this.scanner.restore(savedState);
+            return createToken(
+              TokenKind.EncapsedAndWhitespace,
+              content,
+              createLocation(start, this.scanner.getCurrentPosition())
+            );
+          }
+
+          // 終了ラベルを処理
+          const endToken = createToken(
+            TokenKind.EndHeredoc,
+            label,
+            createLocation(start, this.scanner.getCurrentPosition())
+          );
+          
+          this.pendingHeredoc = null;
+          return endToken;
         }
 
         this.scanner.restore(savedState);
@@ -327,12 +391,19 @@ export class Tokenizer {
       lineStart = CharUtils.isNewline(char);
     }
 
-    return createToken(
-      TokenKind.String,
-      content,
-      createLocation(start, this.scanner.getCurrentPosition()),
-      { value: content, quote: isNowdoc ? "'" : '"' }
-    );
+    // EOF に達した場合
+    if (content.length > 0) {
+      const token = createToken(
+        TokenKind.EncapsedAndWhitespace,
+        content,
+        createLocation(start, this.scanner.getCurrentPosition())
+      );
+      this.pendingHeredoc = null;
+      return token;
+    }
+
+    this.pendingHeredoc = null;
+    return null;
   }
 
   /**
@@ -368,15 +439,10 @@ export class Tokenizer {
       text = this.scanDecimalNumber();
     }
 
-    // アンダースコアを除去して数値に変換
-    const cleanText = text.replace(/_/g, '');
-    const value = Number(cleanText);
-
     return createToken(
       TokenKind.Number,
       text,
-      createLocation(start, this.scanner.getCurrentPosition()),
-      { value }
+      createLocation(start, this.scanner.getCurrentPosition())
     );
   }
 
@@ -384,12 +450,21 @@ export class Tokenizer {
    * 10進数のスキャン
    */
   private scanDecimalNumber(): string {
-    let text = this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
-
-    // 小数部
-    if (this.scanner.peek() === '.' && CharUtils.isDigit(this.scanner.peek(1))) {
+    let text = '';
+    
+    // 小数点で始まる場合（.25など）
+    if (this.scanner.peek() === '.') {
       text += this.scanner.advance();
       text += this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
+    } else {
+      // 整数部
+      text = this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
+      
+      // 小数部
+      if (this.scanner.peek() === '.' && CharUtils.isDigit(this.scanner.peek(1))) {
+        text += this.scanner.advance();
+        text += this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
+      }
     }
 
     // 指数部
@@ -421,8 +496,8 @@ export class Tokenizer {
   private scanVariable(start: SourcePosition): Token {
     let text = this.scanner.advance(); // $
 
-    // ${expr} 形式
-    if (this.scanner.peek() === '{') {
+    // ${expr} 形式または$$ (variable variable)
+    if (this.scanner.peek() === '{' || this.scanner.peek() === '$') {
       // パーサーで処理
       return this.makeToken(TokenKind.Dollar, text, start);
     }
@@ -433,8 +508,7 @@ export class Tokenizer {
     return createToken(
       TokenKind.Variable,
       text,
-      createLocation(start, this.scanner.getCurrentPosition()),
-      { name: text.slice(1) }
+      createLocation(start, this.scanner.getCurrentPosition())
     );
   }
 
@@ -454,8 +528,7 @@ export class Tokenizer {
     return createToken(
       TokenKind.Identifier,
       text,
-      createLocation(start, this.scanner.getCurrentPosition()),
-      { name: text }
+      createLocation(start, this.scanner.getCurrentPosition())
     );
   }
 
@@ -619,32 +692,39 @@ export class Tokenizer {
   }
 
   /**
+   * 属性のスキャン
+   */
+  private scanAttribute(start: SourcePosition): Token {
+    this.scanner.skip(2); // #[
+    let text = '#[';
+    let depth = 1;
+
+    while (!this.scanner.isAtEnd() && depth > 0) {
+      const char = this.scanner.advance();
+      text += char;
+      
+      if (char === '[') {
+        depth++;
+      } else if (char === ']') {
+        depth--;
+      }
+    }
+
+    return createToken(
+      TokenKind.Attribute,
+      text,
+      createLocation(start, this.scanner.getCurrentPosition())
+    );
+  }
+
+  /**
    * トークンを作成
    */
   private makeToken(kind: TokenKind, text: string, start: SourcePosition): Token {
     const location = createLocation(start, this.scanner.getCurrentPosition());
     
-    // 各トークンタイプに応じて適切なプロパティを追加
-    switch (kind) {
-      case TokenKind.Number:
-        return createToken(kind, text, location, { value: Number(text) });
-      
-      case TokenKind.String:
-      case TokenKind.StringStart:
-      case TokenKind.StringMiddle:
-      case TokenKind.StringEnd:
-        return createToken(kind, text, location, { value: text, quote: '"' });
-      
-      case TokenKind.Identifier:
-        return createToken(kind, text, location, { name: text });
-      
-      case TokenKind.Variable:
-        return createToken(kind, text, location, { name: text.slice(1) });
-      
-      default:
-        // その他のトークンは追加プロパティなし
-        return createToken(kind as any, text, location);
-    }
+    // createToken関数を使用してトークンを作成
+    return createToken(kind, text, location);
   }
 }
 

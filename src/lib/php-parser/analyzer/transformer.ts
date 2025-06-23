@@ -6,6 +6,9 @@
 import * as AST from '../core/ast.js';
 import { walk, transform, type WalkContext } from './walker.js';
 
+// transformを再エクスポート
+export { transform } from './walker.js';
+
 /**
  * 変換オプション
  */
@@ -146,13 +149,13 @@ export function removeDeadCode(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[
 
     // 常に false の if 文を削除
     if (node.type === 'IfStatement') {
-      if (node.condition.type === 'BooleanLiteral' && !(node.condition as AST.BooleanLiteral).value) {
+      if (node.test.type === 'BooleanLiteral' && !(node.test as AST.BooleanLiteral).value) {
         // else 部分のみ残す
-        return node.else || null;
+        return node.alternate || null;
       }
       // 常に true の if 文は then 部分のみ残す
-      if (node.condition.type === 'BooleanLiteral' && (node.condition as AST.BooleanLiteral).value) {
-        return node.then;
+      if (node.test.type === 'BooleanLiteral' && (node.test as AST.BooleanLiteral).value) {
+        return node.consequent;
       }
     }
 
@@ -237,7 +240,7 @@ export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AS
       const func = simpleFunctions.get((node.callee as AST.Identifier).name)!;
       const returnStmt = func.body.statements[0] as AST.ReturnStatement;
 
-      if (returnStmt.argument && func.parameters.length === node.arguments.length) {
+      if (returnStmt.value && func.parameters.length === node.arguments.length) {
         // パラメータを引数で置換
         const paramMap = new Map<string, AST.Expression>();
         func.parameters.forEach((param, index) => {
@@ -248,8 +251,8 @@ export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AS
           }
         });
 
-        // returnStmt.argument 内の変数を置換
-        const replaced = transform(returnStmt.argument, (n) => {
+        // returnStmt.value 内の変数を置換
+        const replaced = transform(returnStmt.value, (n) => {
           if (n.type === 'VariableExpression' && typeof n.name === 'string') {
             // パラメータ名と一致する変数を引数で置換
             const paramName = n.name.substring(1); // $ を除去
@@ -298,8 +301,8 @@ export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
 
     // 無限ループの可能性をチェック
     if (n.type === 'WhileStatement' &&
-      n.condition.type === 'BooleanLiteral' &&
-      (n.condition as AST.BooleanLiteral).value === true) {
+      n.test.type === 'BooleanLiteral' &&
+      (n.test as AST.BooleanLiteral).value === true) {
       warnings.push({
         type: 'infinite-loop',
         message: 'Possible infinite loop detected',
@@ -612,4 +615,84 @@ export interface ASTStatistics {
   functions: number;
   classes: number;
   variables: Set<string>;
+}
+
+/**
+ * 非同期で変換を実行
+ */
+export async function transformAsync(
+  ast: AST.Node | AST.Node[],
+  transformer: (node: AST.Node, context: WalkContext) => Promise<AST.Node | null> | AST.Node | null
+): Promise<AST.Node | AST.Node[] | null> {
+  if (Array.isArray(ast)) {
+    const results = await Promise.all(
+      ast.map(async node => {
+        const result = await transformNodeAsync(node, transformer);
+        return result;
+      })
+    );
+    return results.filter((n): n is AST.Node => n !== null);
+  }
+  return await transformNodeAsync(ast, transformer);
+}
+
+/**
+ * ノードを非同期で変換（内部実装）
+ */
+async function transformNodeAsync(
+  node: AST.Node,
+  transformer: (node: AST.Node, context: WalkContext) => Promise<AST.Node | null> | AST.Node | null
+): Promise<AST.Node | null> {
+  const transformed = await transformer(node, {
+    parents: [],
+    depth: 0,
+    userContext: undefined
+  });
+
+  if (transformed === null) {
+    return null;
+  }
+
+  // 子ノードを再帰的に変換
+  const transformedChildren = await transformChildrenAsync(transformed, transformer);
+
+  return transformedChildren;
+}
+
+/**
+ * 子ノードを非同期で変換（内部実装）
+ */
+async function transformChildrenAsync(
+  node: AST.Node,
+  transformer: (node: AST.Node, context: WalkContext) => Promise<AST.Node | null> | AST.Node | null
+): Promise<AST.Node> {
+  const transformed: any = { ...node };
+
+  for (const key in transformed) {
+    const value = transformed[key];
+
+    if (value && typeof value === 'object') {
+      if ('type' in value) {
+        // 単一ノード
+        const result = await transformNodeAsync(value, transformer);
+        transformed[key] = result;
+      } else if (Array.isArray(value)) {
+        // ノードの配列
+        const newArray: any[] = [];
+        for (const item of value) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            const result = await transformNodeAsync(item, transformer);
+            if (result !== null) {
+              newArray.push(result);
+            }
+          } else {
+            newArray.push(item);
+          }
+        }
+        transformed[key] = newArray;
+      }
+    }
+  }
+
+  return transformed;
 }

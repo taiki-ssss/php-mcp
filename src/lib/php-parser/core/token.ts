@@ -169,6 +169,14 @@ export enum TokenKind {
   StringStart = 'StringStart',
   StringMiddle = 'StringMiddle',
   StringEnd = 'StringEnd',
+  
+  // Heredoc/Nowdoc
+  StartHeredoc = 'StartHeredoc',
+  EndHeredoc = 'EndHeredoc',
+  EncapsedAndWhitespace = 'EncapsedAndWhitespace',
+  
+  // 属性
+  Attribute = 'Attribute',
 
   // 終端
   EOF = 'EOF',
@@ -182,6 +190,8 @@ export interface BaseToken {
   readonly kind: TokenKind;
   readonly text: string;
   readonly location: SourceLocation;
+  readonly type?: string; // PHP互換のタイプ
+  readonly value?: string | number; // PHP互換の値
 }
 
 /**
@@ -189,7 +199,7 @@ export interface BaseToken {
  */
 export interface NumberToken extends BaseToken {
   readonly kind: TokenKind.Number;
-  readonly value: number;
+  readonly value: string | number;
 }
 
 export interface StringToken extends BaseToken {
@@ -262,7 +272,9 @@ export interface SpecialToken extends BaseToken {
   readonly kind:
   | TokenKind.OpenTag | TokenKind.OpenTagEcho | TokenKind.CloseTag
   | TokenKind.InlineHTML | TokenKind.Comment | TokenKind.DocComment
-  | TokenKind.Whitespace | TokenKind.Newline | TokenKind.EOF | TokenKind.Unknown;
+  | TokenKind.Whitespace | TokenKind.Newline | TokenKind.EOF | TokenKind.Unknown
+  | TokenKind.StartHeredoc | TokenKind.EndHeredoc | TokenKind.EncapsedAndWhitespace
+  | TokenKind.Attribute;
 }
 
 /**
@@ -278,22 +290,6 @@ export type Token =
   | DelimiterToken
   | SpecialToken;
 
-/**
- * トークンを作成するヘルパー関数
- */
-export function createToken<T extends Token>(
-  kind: T['kind'],
-  text: string,
-  location: SourceLocation,
-  props?: Omit<T, 'kind' | 'text' | 'location'>
-): T {
-  return {
-    kind,
-    text,
-    location,
-    ...props
-  } as T;
-}
 
 /**
  * キーワードのマップ
@@ -383,4 +379,204 @@ export function isTokenKind<K extends TokenKind>(
   kind: K
 ): token is Extract<Token, { kind: K }> {
   return token.kind === kind;
+}
+
+/**
+ * トークンを作成
+ */
+export function createToken(kind: TokenKind, text: string, location: SourceLocation): Token {
+  return createExtendedToken(kind, text, location);
+}
+
+/**
+ * PHP互換のトークンタイプマッピング
+ */
+export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
+  // PHP タグ
+  [TokenKind.OpenTag]: 'T_OPEN_TAG',
+  [TokenKind.OpenTagEcho]: 'T_OPEN_TAG_WITH_ECHO',
+  [TokenKind.CloseTag]: 'T_CLOSE_TAG',
+  [TokenKind.InlineHTML]: 'T_INLINE_HTML',
+  
+  // キーワード
+  [TokenKind.If]: 'T_IF',
+  [TokenKind.Else]: 'T_ELSE',
+  [TokenKind.ElseIf]: 'T_ELSEIF',
+  [TokenKind.While]: 'T_WHILE',
+  [TokenKind.Do]: 'T_DO',
+  [TokenKind.For]: 'T_FOR',
+  [TokenKind.Foreach]: 'T_FOREACH',
+  [TokenKind.Function]: 'T_FUNCTION',
+  [TokenKind.Class]: 'T_CLASS',
+  [TokenKind.Interface]: 'T_INTERFACE',
+  [TokenKind.Trait]: 'T_TRAIT',
+  [TokenKind.Public]: 'T_PUBLIC',
+  [TokenKind.Private]: 'T_PRIVATE',
+  [TokenKind.Protected]: 'T_PROTECTED',
+  [TokenKind.Echo]: 'T_ECHO',
+  [TokenKind.Return]: 'T_RETURN',
+  [TokenKind.Break]: 'T_BREAK',
+  [TokenKind.Continue]: 'T_CONTINUE',
+  [TokenKind.Try]: 'T_TRY',
+  [TokenKind.Catch]: 'T_CATCH',
+  [TokenKind.Finally]: 'T_FINALLY',
+  [TokenKind.Throw]: 'T_THROW',
+  [TokenKind.New]: 'T_NEW',
+  [TokenKind.Static]: 'T_STATIC',
+  [TokenKind.Abstract]: 'T_ABSTRACT',
+  [TokenKind.Final]: 'T_FINAL',
+  [TokenKind.Const]: 'T_CONST',
+  [TokenKind.Namespace]: 'T_NAMESPACE',
+  [TokenKind.Use]: 'T_USE',
+  [TokenKind.As]: 'T_AS',
+  [TokenKind.Extends]: 'T_EXTENDS',
+  [TokenKind.Implements]: 'T_IMPLEMENTS',
+  [TokenKind.Array]: 'T_ARRAY',
+  [TokenKind.Isset]: 'T_ISSET',
+  [TokenKind.Empty]: 'T_EMPTY',
+  [TokenKind.Unset]: 'T_UNSET',
+  [TokenKind.List]: 'T_LIST',
+  [TokenKind.Switch]: 'T_SWITCH',
+  [TokenKind.Case]: 'T_CASE',
+  [TokenKind.Default]: 'T_DEFAULT',
+  [TokenKind.Match]: 'T_MATCH',
+  [TokenKind.Fn]: 'T_FN',
+  [TokenKind.And]: 'T_LOGICAL_AND',
+  [TokenKind.Or]: 'T_LOGICAL_OR',
+  [TokenKind.Xor]: 'T_LOGICAL_XOR',
+  
+  // リテラル・識別子
+  [TokenKind.Variable]: 'T_VARIABLE',
+  [TokenKind.String]: 'T_CONSTANT_ENCAPSED_STRING',
+  [TokenKind.StringStart]: 'T_START_HEREDOC',
+  [TokenKind.StringEnd]: 'T_END_HEREDOC',
+  [TokenKind.StartHeredoc]: 'T_START_HEREDOC',
+  [TokenKind.EndHeredoc]: 'T_END_HEREDOC',
+  [TokenKind.EncapsedAndWhitespace]: 'T_ENCAPSED_AND_WHITESPACE',
+  [TokenKind.Number]: 'T_LNUMBER',
+  [TokenKind.Identifier]: 'T_STRING',
+  
+  // 演算子
+  [TokenKind.EqualEqual]: 'T_IS_EQUAL',
+  [TokenKind.BangEqual]: 'T_IS_NOT_EQUAL',
+  [TokenKind.EqualEqualEqual]: 'T_IS_IDENTICAL',
+  [TokenKind.BangEqualEqual]: 'T_IS_NOT_IDENTICAL',
+  [TokenKind.LessEqual]: 'T_IS_SMALLER_OR_EQUAL',
+  [TokenKind.GreaterEqual]: 'T_IS_GREATER_OR_EQUAL',
+  [TokenKind.AmpersandAmpersand]: 'T_BOOLEAN_AND',
+  [TokenKind.PipePipe]: 'T_BOOLEAN_OR',
+  [TokenKind.QuestionQuestion]: 'T_COALESCE',
+  [TokenKind.Spaceship]: 'T_SPACESHIP',
+  [TokenKind.DoubleColon]: 'T_DOUBLE_COLON',
+  [TokenKind.Arrow]: 'T_OBJECT_OPERATOR',
+  [TokenKind.QuestionArrow]: 'T_NULLSAFE_OBJECT_OPERATOR',
+  [TokenKind.DoubleArrow]: 'T_DOUBLE_ARROW',
+  [TokenKind.PlusEqual]: 'T_PLUS_EQUAL',
+  [TokenKind.MinusEqual]: 'T_MINUS_EQUAL',
+  [TokenKind.StarEqual]: 'T_MUL_EQUAL',
+  [TokenKind.SlashEqual]: 'T_DIV_EQUAL',
+  [TokenKind.DotEqual]: 'T_CONCAT_EQUAL',
+  [TokenKind.PercentEqual]: 'T_MOD_EQUAL',
+  [TokenKind.AmpersandEqual]: 'T_AND_EQUAL',
+  [TokenKind.PipeEqual]: 'T_OR_EQUAL',
+  [TokenKind.CaretEqual]: 'T_XOR_EQUAL',
+  [TokenKind.LessLessEqual]: 'T_SL_EQUAL',
+  [TokenKind.GreaterGreaterEqual]: 'T_SR_EQUAL',
+  [TokenKind.StarStarEqual]: 'T_POW_EQUAL',
+  [TokenKind.QuestionQuestionEqual]: 'T_COALESCE_EQUAL',
+  [TokenKind.PlusPlus]: 'T_INC',
+  [TokenKind.MinusMinus]: 'T_DEC',
+  [TokenKind.LessLess]: 'T_SL',
+  [TokenKind.GreaterGreater]: 'T_SR',
+  [TokenKind.Instanceof]: 'T_INSTANCEOF',
+  [TokenKind.StarStar]: 'T_POW',
+  
+  // その他
+  [TokenKind.Comment]: 'T_COMMENT',
+  [TokenKind.DocComment]: 'T_DOC_COMMENT',
+  [TokenKind.Whitespace]: 'T_WHITESPACE',
+  [TokenKind.Newline]: 'T_WHITESPACE',
+  [TokenKind.EOF]: 'T_EOF',
+  [TokenKind.Backslash]: 'T_NS_SEPARATOR',
+  [TokenKind.Attribute]: 'T_ATTRIBUTE',
+  
+  // 記号（PHPトークンタイプを持たないもの）
+  [TokenKind.LeftParen]: '(',
+  [TokenKind.RightParen]: ')',
+  [TokenKind.LeftBracket]: '[',
+  [TokenKind.RightBracket]: ']',
+  [TokenKind.LeftBrace]: '{',
+  [TokenKind.RightBrace]: '}',
+  [TokenKind.Plus]: '+',
+  [TokenKind.Minus]: '-',
+  [TokenKind.Star]: '*',
+  [TokenKind.Slash]: '/',
+  [TokenKind.Percent]: '%',
+  [TokenKind.Dot]: '.',
+  [TokenKind.Equal]: '=',
+  [TokenKind.Less]: '<',
+  [TokenKind.Greater]: '>',
+  [TokenKind.Ampersand]: '&',
+  [TokenKind.Pipe]: '|',
+  [TokenKind.Caret]: '^',
+  [TokenKind.Tilde]: '~',
+  [TokenKind.Question]: '?',
+  [TokenKind.Colon]: ':',
+  [TokenKind.Semicolon]: ';',
+  [TokenKind.Comma]: ',',
+  [TokenKind.Bang]: '!',
+  [TokenKind.At]: '@',
+  [TokenKind.Dollar]: 'T_DOLLAR',
+  [TokenKind.Unknown]: 'T_UNKNOWN',
+};
+
+/**
+ * 拡張トークンを作成
+ */
+export function createExtendedToken(
+  kind: TokenKind,
+  text: string,
+  location: SourceLocation,
+  data?: any
+): Token {
+  // 数値の場合、整数か浮動小数点かを判定
+  let phpType = TOKEN_TYPE_MAP[kind] || kind;
+  if (kind === TokenKind.Number) {
+    // 浮動小数点数の判定
+    if (text.includes('.') || text.toLowerCase().includes('e')) {
+      phpType = 'T_DNUMBER';
+    } else {
+      phpType = 'T_LNUMBER';
+    }
+  }
+  
+  const base = {
+    kind,
+    text,
+    location,
+    type: phpType,
+    value: text
+  };
+
+  // トークンタイプに応じて適切な型を返す
+  switch (kind) {
+    case TokenKind.Number:
+      // valueプロパティは元のテキストを保持（PHPトークナイザー互換）
+      return { ...base, kind, value: text, type: phpType } as NumberToken;
+    
+    case TokenKind.String:
+    case TokenKind.StringStart:
+    case TokenKind.StringMiddle:
+    case TokenKind.StringEnd:
+      return { ...base, kind: kind as any, value: data?.value ?? text, quote: data?.quote ?? '"' } as StringToken;
+    
+    case TokenKind.Identifier:
+      return { ...base, kind, name: data?.name ?? text } as IdentifierToken;
+    
+    case TokenKind.Variable:
+      return { ...base, kind, name: data?.name ?? text.slice(1) } as VariableToken;
+    
+    default:
+      return base as Token;
+  }
 }

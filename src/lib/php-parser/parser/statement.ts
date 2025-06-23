@@ -17,6 +17,11 @@ export class StatementParser extends ExpressionParser {
    * 文をパース
    */
   parseStatement(): AST.Statement | null {
+    // Skip whitespace tokens
+    while (this.peek().kind === TokenKind.Whitespace || this.peek().kind === TokenKind.Newline) {
+      this.advance();
+    }
+    
     // ブロック文
     if (this.check(TokenKind.LeftBrace)) {
       return this.parseBlockStatement();
@@ -88,6 +93,10 @@ export class StatementParser extends ExpressionParser {
       return this.parseGotoStatement();
     }
 
+    if (this.match(TokenKind.Declare)) {
+      return this.parseDeclareStatement();
+    }
+
     if (this.check(TokenKind.Identifier)) {
       // ラベルの可能性をチェック
       const savedPos = this.current;
@@ -95,10 +104,9 @@ export class StatementParser extends ExpressionParser {
 
       if (this.match(TokenKind.Colon)) {
         // ラベル文
-        // Label statements are not in the AST, return an expression statement instead
         return {
-          type: 'ExpressionStatement',
-          expression: id,
+          type: 'LabeledStatement',
+          label: id.name,
           location: mergeLocations(id.location!, this.previous().location)
         };
       }
@@ -143,22 +151,39 @@ export class StatementParser extends ExpressionParser {
     this.consume(TokenKind.RightParen, "Expected ')' after if condition");
 
     const consequent = this.parseStatement()!;
-    let alternate: AST.Statement | undefined;
+    const elseifs: AST.ElseIfClause[] = [];
+    let alternate: AST.Statement | null = null;
 
-    if (this.match(TokenKind.ElseIf)) {
-      // elseif は if 文として扱う
-      alternate = this.parseIfStatement();
-    } else if (this.match(TokenKind.Else)) {
+    // elseif clauses
+    while (this.match(TokenKind.ElseIf)) {
+      const elseifStart = this.previous().location.start;
+      this.consume(TokenKind.LeftParen, "Expected '(' after 'elseif'");
+      const elseifTest = this.parseExpression();
+      this.consume(TokenKind.RightParen, "Expected ')' after elseif condition");
+      const elseifConsequent = this.parseStatement()!;
+      const elseifEnd = elseifConsequent.location!.end;
+      
+      elseifs.push({
+        type: 'ElseIfClause',
+        test: elseifTest,
+        consequent: elseifConsequent,
+        location: createLocation(elseifStart, elseifEnd)
+      });
+    }
+
+    // else clause
+    if (this.match(TokenKind.Else)) {
       alternate = this.parseStatement()!;
     }
 
-    const end = alternate?.location?.end || consequent.location!.end;
+    const end = alternate?.location?.end || (elseifs.length > 0 ? elseifs[elseifs.length - 1].location!.end : consequent.location!.end);
 
     return {
       type: 'IfStatement',
-      condition: test,
-      then: consequent,
-      else: alternate,
+      test,
+      consequent,
+      elseifs,
+      alternate,
       location: createLocation(start, end)
     };
   }
@@ -177,7 +202,7 @@ export class StatementParser extends ExpressionParser {
 
     return {
       type: 'WhileStatement',
-      condition: test,
+      test,
       body,
       location: createLocation(start, body.location!.end)
     };
@@ -199,7 +224,7 @@ export class StatementParser extends ExpressionParser {
     return {
       type: 'DoWhileStatement',
       body,
-      condition: test,
+      test,
       location: createLocation(start, end)
     };
   }
@@ -213,9 +238,22 @@ export class StatementParser extends ExpressionParser {
     this.consume(TokenKind.LeftParen, "Expected '(' after 'for'");
 
     // 初期化
-    let init: AST.Expression[] | undefined;
+    let init: AST.Expression | null = null;
     if (!this.check(TokenKind.Semicolon)) {
-      init = [this.parseExpression()];
+      const exprs: AST.Expression[] = [];
+      do {
+        exprs.push(this.parseExpression());
+      } while (this.match(TokenKind.Comma));
+      
+      if (exprs.length === 1) {
+        init = exprs[0];
+      } else {
+        init = {
+          type: 'SequenceExpression',
+          expressions: exprs,
+          location: mergeLocations(exprs[0].location!, exprs[exprs.length - 1].location!)
+        } as AST.Expression;
+      }
     }
     this.consume(TokenKind.Semicolon, "Expected ';' after for init");
 
@@ -227,9 +265,22 @@ export class StatementParser extends ExpressionParser {
     this.consume(TokenKind.Semicolon, "Expected ';' after for condition");
 
     // 更新
-    let update: AST.Expression[] | undefined;
+    let update: AST.Expression | null = null;
     if (!this.check(TokenKind.RightParen)) {
-      update = [this.parseExpression()];
+      const exprs: AST.Expression[] = [];
+      do {
+        exprs.push(this.parseExpression());
+      } while (this.match(TokenKind.Comma));
+      
+      if (exprs.length === 1) {
+        update = exprs[0];
+      } else {
+        update = {
+          type: 'SequenceExpression',
+          expressions: exprs,
+          location: mergeLocations(exprs[0].location!, exprs[exprs.length - 1].location!)
+        } as AST.Expression;
+      }
     }
     this.consume(TokenKind.RightParen, "Expected ')' after for clauses");
 
@@ -238,7 +289,7 @@ export class StatementParser extends ExpressionParser {
     return {
       type: 'ForStatement',
       init,
-      condition: test,
+      test: test || null,
       update,
       body,
       location: createLocation(start, body.location!.end)
@@ -252,29 +303,31 @@ export class StatementParser extends ExpressionParser {
     const start = this.previous().location.start;
 
     this.consume(TokenKind.LeftParen, "Expected '(' after 'foreach'");
-    const iterable = this.parseExpression();
+    const expression = this.parseExpression();
     this.consume(TokenKind.As, "Expected 'as' in foreach");
 
-    let key: AST.Expression | undefined;
+    let key: AST.Expression | null = null;
     let value: AST.Expression;
-    let byReference = false;
+    let byRef = false;
 
-    // キーの可能性をチェック
+    // Check for reference
+    if (this.match(TokenKind.Ampersand)) {
+      byRef = true;
+    }
+
     const expr1 = this.parseExpression();
 
     if (this.match(TokenKind.DoubleArrow)) {
       // key => value
       key = expr1;
-      byReference = this.match(TokenKind.Ampersand);
+      // Check for reference again
+      if (this.match(TokenKind.Ampersand)) {
+        byRef = true;
+      }
       value = this.parseExpression();
     } else {
       // value only
       value = expr1;
-      // Check for reference expression
-      if (expr1.type === 'ReferenceExpression') {
-        byReference = true;
-        value = (expr1 as AST.ReferenceExpression).expression as AST.VariableExpression;
-      }
     }
 
     this.consume(TokenKind.RightParen, "Expected ')' after foreach");
@@ -282,9 +335,10 @@ export class StatementParser extends ExpressionParser {
 
     return {
       type: 'ForeachStatement',
-      iterable,
-      key: key as AST.VariableExpression | AST.ListExpression | undefined,
-      value: value as AST.VariableExpression | AST.ListExpression | AST.ReferenceExpression,
+      expression,
+      key,
+      value,
+      byRef,
       body,
       location: createLocation(start, body.location!.end)
     };
@@ -340,7 +394,7 @@ export class StatementParser extends ExpressionParser {
 
         cases.push({
           type: 'SwitchCase',
-          test: undefined,
+          test: null,
           consequent,
           location: createLocation(
             this.tokens[this.current - 2].location.start,
@@ -367,18 +421,17 @@ export class StatementParser extends ExpressionParser {
    */
   private parseBreakStatement(): AST.BreakStatement {
     const start = this.previous().location.start;
-    let level: number | undefined;
+    let label: AST.Expression | null = null;
 
     if (this.check(TokenKind.Number)) {
-      const num = this.parseNumberLiteral();
-      level = num.value;
+      label = this.parseNumberLiteral();
     }
 
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after break").location.end;
 
     return {
       type: 'BreakStatement',
-      level,
+      label,
       location: createLocation(start, end)
     };
   }
@@ -388,18 +441,17 @@ export class StatementParser extends ExpressionParser {
    */
   private parseContinueStatement(): AST.ContinueStatement {
     const start = this.previous().location.start;
-    let level: number | undefined;
+    let label: AST.Expression | null = null;
 
     if (this.check(TokenKind.Number)) {
-      const num = this.parseNumberLiteral();
-      level = num.value;
+      label = this.parseNumberLiteral();
     }
 
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after continue").location.end;
 
     return {
       type: 'ContinueStatement',
-      level,
+      label,
       location: createLocation(start, end)
     };
   }
@@ -409,17 +461,17 @@ export class StatementParser extends ExpressionParser {
    */
   private parseReturnStatement(): AST.ReturnStatement {
     const start = this.previous().location.start;
-    let argument: AST.Expression | undefined;
+    let value: AST.Expression | null = null;
 
     if (!this.check(TokenKind.Semicolon) && !this.isAtEnd()) {
-      argument = this.parseExpression();
+      value = this.parseExpression();
     }
 
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after return").location.end;
 
     return {
       type: 'ReturnStatement',
-      argument,
+      value,
       location: createLocation(start, end)
     };
   }
@@ -429,12 +481,12 @@ export class StatementParser extends ExpressionParser {
    */
   private parseThrowStatement(): AST.ThrowStatement {
     const start = this.previous().location.start;
-    const argument = this.parseExpression();
+    const expression = this.parseExpression();
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after throw").location.end;
 
     return {
       type: 'ThrowStatement',
-      argument,
+      expression,
       location: createLocation(start, end)
     };
   }
@@ -470,7 +522,7 @@ export class StatementParser extends ExpressionParser {
       handlers.push({
         type: 'CatchClause',
         types,
-        variable: param,
+        param: param || null,
         body,
         location: createLocation(catchStart, body.location!.end)
       });
@@ -554,8 +606,8 @@ export class StatementParser extends ExpressionParser {
 
       declarations.push({
         type: 'StaticVariableDeclaration',
-        variable,
-        initializer,
+        id: variable,
+        init: initializer || null,
         location: mergeLocations(
           variable.location!,
           initializer?.location || variable.location!
@@ -600,12 +652,54 @@ export class StatementParser extends ExpressionParser {
    */
   private parseGotoStatement(): AST.GotoStatement {
     const start = this.previous().location.start;
-    const label = this.parseIdentifier();
+    const labelId = this.parseIdentifier();
     const end = this.consume(TokenKind.Semicolon, "Expected ';' after goto").location.end;
 
     return {
       type: 'GotoStatement',
-      label,
+      label: labelId.name,
+      location: createLocation(start, end)
+    };
+  }
+
+  /**
+   * declare文をパース
+   */
+  private parseDeclareStatement(): AST.DeclareStatement {
+    const start = this.previous().location.start;
+    
+    this.consume(TokenKind.LeftParen, "Expected '(' after 'declare'");
+    const directives: AST.DeclareDirective[] = [];
+    
+    do {
+      const nameToken = this.consume(TokenKind.Identifier, "Expected directive name");
+      const name = String(nameToken.value || nameToken.text || '');
+      this.consume(TokenKind.Equal, "Expected '=' after directive name");
+      const value = this.parseExpression();
+      
+      directives.push({
+        type: 'DeclareDirective',
+        name,
+        value,
+        location: mergeLocations(nameToken.location, value.location!)
+      });
+    } while (this.match(TokenKind.Comma));
+    
+    this.consume(TokenKind.RightParen, "Expected ')' after declare directives");
+    
+    let body: AST.Statement | null = null;
+    if (this.check(TokenKind.LeftBrace)) {
+      body = this.parseBlockStatement();
+    } else {
+      this.consume(TokenKind.Semicolon, "Expected ';' or '{' after declare");
+    }
+    
+    const end = body?.location?.end || this.previous().location.end;
+    
+    return {
+      type: 'DeclareStatement',
+      directives,
+      body,
       location: createLocation(start, end)
     };
   }

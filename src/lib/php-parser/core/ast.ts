@@ -24,6 +24,8 @@ export interface Program extends BaseNode {
   readonly statements: Statement[];
 }
 
+export type PhpProgram = Program;
+
 // ==================== 文 (Statement) ====================
 
 export type Statement =
@@ -52,7 +54,10 @@ export type Statement =
   | StaticStatement
   | ConstStatement
   | UnsetStatement
-  | GotoStatement;
+  | GotoStatement
+  | DeclareStatement
+  | LabeledStatement
+  | InlineHTMLStatement;
 
 export interface ExpressionStatement extends BaseNode {
   readonly type: 'ExpressionStatement';
@@ -66,44 +71,45 @@ export interface BlockStatement extends BaseNode {
 
 export interface IfStatement extends BaseNode {
   readonly type: 'IfStatement';
-  readonly condition: Expression;
-  readonly then: Statement;
-  readonly elseIfs?: ElseIfClause[];
-  readonly else?: Statement;
+  readonly test: Expression;
+  readonly consequent: Statement;
+  readonly elseifs: ElseIfClause[];
+  readonly alternate: Statement | null;
 }
 
 export interface ElseIfClause extends BaseNode {
   readonly type: 'ElseIfClause';
-  readonly condition: Expression;
-  readonly then: Statement;
+  readonly test: Expression;
+  readonly consequent: Statement;
 }
 
 export interface WhileStatement extends BaseNode {
   readonly type: 'WhileStatement';
-  readonly condition: Expression;
+  readonly test: Expression;
   readonly body: Statement;
 }
 
 export interface ForStatement extends BaseNode {
   readonly type: 'ForStatement';
-  readonly init?: Expression[];
-  readonly condition?: Expression;
-  readonly update?: Expression[];
+  readonly init: Expression | null;
+  readonly test: Expression | null;
+  readonly update: Expression | null;
   readonly body: Statement;
 }
 
 export interface ForeachStatement extends BaseNode {
   readonly type: 'ForeachStatement';
-  readonly iterable: Expression;
-  readonly key?: VariableExpression | ListExpression;
-  readonly value: VariableExpression | ListExpression | ReferenceExpression;
+  readonly expression: Expression;
+  readonly key: Expression | null;
+  readonly value: Expression;
+  readonly byRef: boolean;
   readonly body: Statement;
 }
 
 export interface DoWhileStatement extends BaseNode {
   readonly type: 'DoWhileStatement';
   readonly body: Statement;
-  readonly condition: Expression;
+  readonly test: Expression;
 }
 
 export interface SwitchStatement extends BaseNode {
@@ -114,28 +120,28 @@ export interface SwitchStatement extends BaseNode {
 
 export interface SwitchCase extends BaseNode {
   readonly type: 'SwitchCase';
-  readonly test?: Expression; // undefined for default case
+  readonly test: Expression | null; // null for default case
   readonly consequent: Statement[];
 }
 
 export interface BreakStatement extends BaseNode {
   readonly type: 'BreakStatement';
-  readonly level?: number;
+  readonly label: Expression | null;
 }
 
 export interface ContinueStatement extends BaseNode {
   readonly type: 'ContinueStatement';
-  readonly level?: number;
+  readonly label: Expression | null;
 }
 
 export interface ReturnStatement extends BaseNode {
   readonly type: 'ReturnStatement';
-  readonly argument?: Expression;
+  readonly value: Expression | null;
 }
 
 export interface ThrowStatement extends BaseNode {
   readonly type: 'ThrowStatement';
-  readonly argument: Expression;
+  readonly expression: Expression;
 }
 
 export interface TryStatement extends BaseNode {
@@ -148,7 +154,7 @@ export interface TryStatement extends BaseNode {
 export interface CatchClause extends BaseNode {
   readonly type: 'CatchClause';
   readonly types: NameExpression[];
-  readonly variable?: VariableExpression;
+  readonly param: VariableExpression | null;
   readonly body: BlockStatement;
 }
 
@@ -169,8 +175,8 @@ export interface StaticStatement extends BaseNode {
 
 export interface StaticVariableDeclaration extends BaseNode {
   readonly type: 'StaticVariableDeclaration';
-  readonly variable: VariableExpression;
-  readonly initializer?: Expression;
+  readonly id: VariableExpression;
+  readonly init: Expression | null;
 }
 
 export interface VariableDeclaration extends BaseNode {
@@ -197,7 +203,29 @@ export interface UnsetStatement extends BaseNode {
 
 export interface GotoStatement extends BaseNode {
   readonly type: 'GotoStatement';
-  readonly label: Identifier;
+  readonly label: string;
+}
+
+export interface DeclareStatement extends BaseNode {
+  readonly type: 'DeclareStatement';
+  readonly directives: DeclareDirective[];
+  readonly body: Statement | null;
+}
+
+export interface DeclareDirective extends BaseNode {
+  readonly type: 'DeclareDirective';
+  readonly name: string;
+  readonly value: Expression;
+}
+
+export interface LabeledStatement extends BaseNode {
+  readonly type: 'LabeledStatement';
+  readonly label: string;
+}
+
+export interface InlineHTMLStatement extends BaseNode {
+  readonly type: 'InlineHTMLStatement';
+  readonly value: string;
 }
 
 // ==================== 宣言 (Declaration) ====================
@@ -279,7 +307,7 @@ export interface ClassConstant extends BaseNode {
     readonly name: Identifier;
     readonly value: Expression;
   }>;
-  readonly modifiers: Visibility[];
+  readonly modifiers: ('public' | 'private' | 'protected' | 'final')[];
 }
 
 export interface TraitUseStatement extends BaseNode {
@@ -384,6 +412,7 @@ export type Expression =
   | Identifier
   | VariableExpression
   | NameExpression
+  | QualifiedName
   // 演算子
   | BinaryExpression
   | UnaryExpression
@@ -393,6 +422,7 @@ export type Expression =
   | ConditionalExpression
   | CoalesceExpression
   | SpaceshipExpression
+  | SequenceExpression
   // メンバーアクセス
   | MemberExpression
   | CallExpression
@@ -484,6 +514,12 @@ export interface NameExpression extends BaseNode {
   readonly type: 'NameExpression';
   readonly parts: string[];
   readonly qualified?: 'unqualified' | 'qualified' | 'fully';
+  readonly name?: string; // 互換性のために追加
+}
+
+export interface QualifiedName extends BaseNode {
+  readonly type: 'QualifiedName';
+  readonly parts: string[];
 }
 
 // 演算子
@@ -498,7 +534,7 @@ export type BinaryOperator =
   | '+' | '-' | '*' | '/' | '%' | '**'
   | '.' | '<<' | '>>' | '&' | '|' | '^'
   | '==' | '!=' | '===' | '!==' | '<' | '>' | '<=' | '>='
-  | 'instanceof';
+  | 'instanceof' | '??';
 
 export interface UnaryExpression extends BaseNode {
   readonly type: 'UnaryExpression';
@@ -551,6 +587,11 @@ export interface SpaceshipExpression extends BaseNode {
   readonly type: 'SpaceshipExpression';
   readonly left: Expression;
   readonly right: Expression;
+}
+
+export interface SequenceExpression extends BaseNode {
+  readonly type: 'SequenceExpression';
+  readonly expressions: Expression[];
 }
 
 // メンバーアクセス
@@ -777,3 +818,9 @@ export type Node =
   | UseItem
   | TraitAlias
   | TraitPrecedence;
+
+// Alias for backward compatibility
+export type AstNode = Node;
+
+// Variable type for backward compatibility
+export type Variable = VariableExpression;

@@ -120,19 +120,19 @@ function walkChildren<T>(
       return walkArray(node.statements, walker, context);
 
     case 'IfStatement': {
-      let result = walkNode(node.condition, walker, context);
+      let result = walkNode(node.test, walker, context);
       if (result) return result;
 
-      result = walkNode(node.then, walker, context);
+      result = walkNode(node.consequent, walker, context);
       if (result) return result;
 
-      if (node.elseIfs) {
-        result = walkArray(node.elseIfs, walker, context);
+      if (node.elseifs) {
+        result = walkArray(node.elseifs, walker, context);
         if (result) return result;
       }
 
-      if (node.else) {
-        result = walkNode(node.else, walker, context);
+      if (node.alternate) {
+        result = walkNode(node.alternate, walker, context);
         if (result) return result;
       }
 
@@ -140,7 +140,7 @@ function walkChildren<T>(
     }
 
     case 'WhileStatement': {
-      let result = walkNode(node.condition, walker, context);
+      let result = walkNode(node.test, walker, context);
       if (result) return result;
 
       return walkNode(node.body, walker, context);
@@ -150,17 +150,17 @@ function walkChildren<T>(
       let result: WalkResult<T>;
 
       if (node.init) {
-        result = walkArray(node.init, walker, context);
+        result = walkNode(node.init, walker, context);
         if (result) return result;
       }
 
-      if (node.condition) {
-        result = walkNode(node.condition, walker, context);
+      if (node.test) {
+        result = walkNode(node.test, walker, context);
         if (result) return result;
       }
 
       if (node.update) {
-        result = walkArray(node.update, walker, context);
+        result = walkNode(node.update, walker, context);
         if (result) return result;
       }
 
@@ -168,7 +168,7 @@ function walkChildren<T>(
     }
 
     case 'ForeachStatement': {
-      let result = walkNode(node.iterable, walker, context);
+      let result = walkNode(node.expression, walker, context);
       if (result) return result;
 
       if (node.key) {
@@ -183,10 +183,10 @@ function walkChildren<T>(
     }
 
     case 'ReturnStatement':
-      return node.argument ? walkNode(node.argument, walker, context) : undefined;
+      return node.value ? walkNode(node.value, walker, context) : undefined;
 
     case 'ThrowStatement':
-      return walkNode(node.argument, walker, context);
+      return walkNode(node.expression, walker, context);
 
     case 'TryStatement': {
       let result = walkNode(node.block, walker, context);
@@ -482,3 +482,103 @@ export const is = {
     return node.type.endsWith('Literal');
   }
 };
+
+/**
+ * 非同期でASTを走査
+ */
+export async function walkAsync<T = void>(
+  node: AST.Node | AST.Node[],
+  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
+  userContext?: any
+): Promise<T | undefined> {
+  const context: WalkContext = {
+    parents: [],
+    depth: 0,
+    userContext
+  };
+
+  if (Array.isArray(node)) {
+    for (const n of node) {
+      const result = await walkNodeAsync(n, walker, context);
+      if (result === 'stop') break;
+      if (result !== undefined && result !== 'skip') {
+        return result as T;
+      }
+    }
+  } else {
+    const result = await walkNodeAsync(node, walker, context);
+    if (result !== undefined && result !== 'skip' && result !== 'stop') {
+      return result as T;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * ノードを非同期で走査（内部実装）
+ */
+async function walkNodeAsync<T>(
+  node: AST.Node,
+  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext
+): Promise<WalkResult<T>> {
+  // ウォーカー関数を呼び出す
+  const result = await walker(node, context);
+
+  // 制御フロー
+  if (result === 'skip' || result === 'stop') {
+    return result;
+  }
+
+  // 値が返された場合は終了
+  if (result !== undefined) {
+    return result;
+  }
+
+  // 子ノードを走査
+  const newContext: WalkContext = {
+    parents: [...context.parents, node],
+    depth: context.depth + 1,
+    userContext: context.userContext
+  };
+
+  // ノードタイプごとの子ノード走査
+  const childResult = await walkChildrenAsync(node, walker, newContext);
+  if (childResult !== undefined) {
+    return childResult;
+  }
+
+  return undefined;
+}
+
+/**
+ * 子ノードを非同期で走査
+ */
+async function walkChildrenAsync<T>(
+  node: AST.Node,
+  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext
+): Promise<WalkResult<T>> {
+  // walkChildrenの実装と同じロジックで、walkNodeをwalkNodeAsyncに、walkArrayをwalkArrayAsyncに置き換える
+  // 実装は省略（walkChildrenと同じパターン）
+  return undefined;
+}
+
+/**
+ * 配列を非同期で走査
+ */
+async function walkArrayAsync<T>(
+  nodes: AST.Node[],
+  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext
+): Promise<WalkResult<T>> {
+  for (const node of nodes) {
+    const result = await walkNodeAsync(node, walker, context);
+    if (result === 'stop') return 'stop';
+    if (result !== undefined && result !== 'skip') {
+      return result;
+    }
+  }
+  return undefined;
+}

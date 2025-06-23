@@ -209,3 +209,81 @@ export const visitors = {
     };
   }
 };
+
+/**
+ * ビジター作成ヘルパー関数
+ */
+export function createVisitor(handlers: {
+  [key: string]: ((node: any, parent?: AST.Node) => any) | {
+    enter?: (node: any, parent?: AST.Node) => any;
+    leave?: (node: any, parent?: AST.Node) => any;
+  };
+}): {
+  visit: (node: AST.Node | AST.Node[]) => void;
+} {
+  const enterHandlers = new Map<string, (node: AST.Node, parent?: AST.Node) => any>();
+  const leaveHandlers = new Map<string, (node: AST.Node, parent?: AST.Node) => any>();
+  const wildcardEnter: ((node: AST.Node, parent?: AST.Node) => any) | undefined = handlers['*'] as any;
+  
+  for (const [key, handler] of Object.entries(handlers)) {
+    if (key === '*' && typeof handler === 'function') {
+      continue; // Wildcard is handled separately
+    }
+    
+    if (typeof handler === 'function') {
+      enterHandlers.set(key, handler);
+    } else if (handler && typeof handler === 'object') {
+      if (handler.enter) {
+        enterHandlers.set(key, handler.enter);
+      }
+      if (handler.leave) {
+        leaveHandlers.set(key, handler.leave);
+      }
+    }
+  }
+  
+  const visit = (node: AST.Node | AST.Node[]) => {
+    const walkNode = (n: AST.Node, parent?: AST.Node) => {
+      // Call wildcard handler if exists
+      if (wildcardEnter) {
+        wildcardEnter(n, parent);
+      }
+      
+      // Call specific enter handler
+      const enterHandler = enterHandlers.get(n.type);
+      if (enterHandler) {
+        enterHandler(n, parent);
+      }
+      
+      // Walk children
+      for (const key in n) {
+        const value = (n as any)[key];
+        if (value && typeof value === 'object') {
+          if (Array.isArray(value)) {
+            value.forEach(item => {
+              if (item && typeof item === 'object' && 'type' in item) {
+                walkNode(item as AST.Node, n);
+              }
+            });
+          } else if ('type' in value) {
+            walkNode(value as AST.Node, n);
+          }
+        }
+      }
+      
+      // Call specific leave handler
+      const leaveHandler = leaveHandlers.get(n.type);
+      if (leaveHandler) {
+        leaveHandler(n, parent);
+      }
+    };
+    
+    if (Array.isArray(node)) {
+      node.forEach(n => walkNode(n));
+    } else {
+      walkNode(node);
+    }
+  };
+  
+  return { visit };
+}

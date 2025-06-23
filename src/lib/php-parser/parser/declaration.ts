@@ -16,6 +16,11 @@ export class DeclarationParser extends StatementParser {
    * トップレベル宣言をパース
    */
   parseDeclaration(): AST.Statement | null {
+    // Skip whitespace tokens
+    while (this.peek().kind === TokenKind.Whitespace || this.peek().kind === TokenKind.Newline) {
+      this.advance();
+    }
+    
     // 宣言
     if (this.match(TokenKind.Function)) {
       return this.parseFunctionDeclaration();
@@ -469,15 +474,15 @@ export class DeclarationParser extends StatementParser {
       return this.parseTraitUse();
     }
 
-    // Const
-    if (this.match(TokenKind.Const)) {
-      return this.parseClassConstant();
-    }
-
     // Modifiers
     const modifiers: string[] = [];
     while (this.checkModifierToken()) {
       modifiers.push(this.advance().text.toLowerCase());
+    }
+
+    // Const with modifiers
+    if (this.match(TokenKind.Const)) {
+      return this.parseClassConstantWithModifiers(modifiers as ('public' | 'private' | 'protected' | 'final')[]);
     }
 
     // Function (method)
@@ -574,10 +579,12 @@ export class DeclarationParser extends StatementParser {
   }
 
   /**
-   * クラス定数をパース
+   * クラス定数をパース（修飾子付き）
    */
-  parseClassConstant(): AST.ClassConstant {
-    const start = this.tokens[this.current - 1].location.start;
+  private parseClassConstantWithModifiers(modifiers: ('public' | 'private' | 'protected' | 'final')[]): AST.ClassConstant {
+    const start = modifiers.length > 0 
+      ? this.tokens[this.current - modifiers.length - 1].location.start
+      : this.tokens[this.current - 1].location.start;
     const constants: Array<{ name: AST.Identifier; value: AST.Expression }> = [];
 
     do {
@@ -596,7 +603,7 @@ export class DeclarationParser extends StatementParser {
     return {
       type: 'ClassConstant',
       constants,
-      modifiers: [], // TODO: parse visibility modifiers
+      modifiers: modifiers.length > 0 ? modifiers : ['public'], // Default to public if no modifiers
       location: createLocation(start, end)
     };
   }

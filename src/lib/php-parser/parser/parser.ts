@@ -20,27 +20,39 @@ export class Parser extends DeclarationParser {
     const start = this.peek().location.start;
     const statements: AST.Statement[] = [];
 
-    // Skip initial HTML if any
-    if (this.match(TokenKind.InlineHTML)) {
-      // Ignore for now
+    // Handle initial HTML if any
+    if (this.peek().type === TokenKind.InlineHTML) {
+      const htmlToken = this.advance();
+      statements.push({
+        type: 'InlineHTMLStatement',
+        value: String(htmlToken.value || htmlToken.text || ''),
+        location: htmlToken.location
+      });
     }
 
     // Skip opening PHP tag
     if (this.match(TokenKind.OpenTag, TokenKind.OpenTagEcho)) {
-      // Process statements
+      // PHP tag found, statements will be parsed in the main loop
     }
 
     while (!this.isAtEnd()) {
       // Handle closing tag
-      if (this.match(TokenKind.CloseTag)) {
-        // Skip any HTML
-        if (this.match(TokenKind.InlineHTML)) {
-          // Ignore for now
+      if (this.check(TokenKind.CloseTag)) {
+        this.advance(); // consume the closing tag
+        // Handle any HTML after closing tag
+        if (this.peek().kind === TokenKind.InlineHTML) {
+          const htmlToken = this.advance();
+          statements.push({
+            type: 'InlineHTMLStatement',
+            value: htmlToken.text,
+            location: htmlToken.location
+          } as AST.InlineHTMLStatement);
         }
         // Look for next opening tag
         if (this.match(TokenKind.OpenTag, TokenKind.OpenTagEcho)) {
           continue;
         }
+        break; // No more PHP code
       }
 
       try {
@@ -77,7 +89,7 @@ export * from '../core/ast.js';
 /**
  * トークン列をパース
  */
-export function parse(tokens: Token[], options?: ParserOptions): AST.Program {
+export function parse(tokens: Token[], options?: ParserOptions): AST.PhpProgram {
   const parser = new Parser(tokens, options);
   return parser.parse();
 }
