@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && chmod 755 dist/app/index.js",
+    "build": "tsc",
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
@@ -13,12 +13,9 @@
   "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",
-    "debug": "^4.4.1",
-    "neverthrow": "^8.2.0",
     "zod": "^3.25.67"
   },
   "devDependencies": {
-    "@types/debug": "^4.1.12",
     "@types/node": "^24.0.3",
     "@vitest/coverage-v8": "^3.2.4",
     "typescript": "^5.8.3",
