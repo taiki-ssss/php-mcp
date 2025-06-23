@@ -1,34 +1,34 @@
 /**
- * ソースコード位置情報の定義
- * エラーレポートやソースマップに使用
+ * Source code location definitions
+ * Used for error reporting and source maps
  */
 
 /**
- * ソースコード内の位置
+ * Position within source code
  */
 export interface SourcePosition {
-  /** 行番号（1始まり） */
+  /** Line number (1-based) */
   readonly line: number;
-  /** 列番号（1始まり） */
+  /** Column number (1-based) */
   readonly column: number;
-  /** ファイル先頭からのオフセット（0始まり） */
+  /** Offset from file start (0-based) */
   readonly offset: number;
 }
 
 /**
- * ソースコード内の範囲
+ * Range within source code
  */
 export interface SourceLocation {
-  /** 開始位置 */
+  /** Start position */
   readonly start: SourcePosition;
-  /** 終了位置 */
+  /** End position */
   readonly end: SourcePosition;
-  /** ソースファイル名（オプション） */
+  /** Source file name (optional) */
   readonly source?: string;
 }
 
 /**
- * 位置情報を作成するヘルパー関数
+ * Helper function to create position information
  */
 export function createPosition(
   line: number,
@@ -39,7 +39,7 @@ export function createPosition(
 }
 
 /**
- * 範囲情報を作成するヘルパー関数
+ * Helper function to create location range
  */
 export function createLocation(
   start: SourcePosition,
@@ -50,7 +50,7 @@ export function createLocation(
 }
 
 /**
- * 2つの位置を結合して範囲を作成
+ * Merge two locations to create a range
  */
 export function mergeLocations(
   first: SourceLocation,
@@ -64,7 +64,7 @@ export function mergeLocations(
 }
 
 /**
- * 位置情報を人間が読める形式に変換
+ * Format location information in human-readable form
  */
 export function formatLocation(location: SourceLocation): string {
   const { start, source } = location;

@@ -1,32 +1,32 @@
 /**
- * AST 変換ユーティリティ
- * AST の変換・最適化・検証
+ * AST Transformation Utilities
+ * Provides AST transformation, optimization, and validation
  */
 
 import * as AST from '../core/ast.js';
 import { walk, transform, type WalkContext } from './walker.js';
 
-// transformを再エクスポート
+// Re-export transform
 export { transform } from './walker.js';
 
 /**
- * 変換オプション
+ * Transformation options
  */
 export interface TransformOptions {
-  /** 未使用の変数を削除 */
+  /** Remove unused variables */
   removeUnusedVariables?: boolean;
-  /** デッドコードを削除 */
+  /** Remove dead code */
   removeDeadCode?: boolean;
-  /** 定数畳み込み */
+  /** Constant folding */
   constantFolding?: boolean;
-  /** インライン展開 */
+  /** Inline simple functions */
   inlineSimpleFunctions?: boolean;
-  /** 最適化レベル */
+  /** Optimization level */
   optimizationLevel?: 0 | 1 | 2 | 3;
 }
 
 /**
- * AST を最適化
+ * Optimizes AST with specified optimization level
  */
 export function optimize(
   ast: AST.Node | AST.Node[],
@@ -38,7 +38,7 @@ export function optimize(
 
   let result = ast;
 
-  // レベル 1: 基本的な最適化
+  // Level 1: Basic optimizations
   if (level >= 1) {
     if (options.constantFolding !== false) {
       result = constantFolding(result);
@@ -48,14 +48,14 @@ export function optimize(
     }
   }
 
-  // レベル 2: 中級最適化
+  // Level 2: Intermediate optimizations
   if (level >= 2) {
     if (options.removeUnusedVariables !== false) {
       result = removeUnusedVariables(result);
     }
   }
 
-  // レベル 3: 高度な最適化
+  // Level 3: Advanced optimizations
   if (level >= 3) {
     if (options.inlineSimpleFunctions !== false) {
       result = inlineSimpleFunctions(result);
@@ -66,7 +66,7 @@ export function optimize(
 }
 
 /**
- * ノードまたはノード配列を変換するヘルパー
+ * Helper to transform a node or array of nodes
  */
 function transformNodeOrArray(
   ast: AST.Node | AST.Node[],
@@ -79,7 +79,7 @@ function transformNodeOrArray(
 }
 
 /**
- * 定数畳み込み
+ * Performs constant folding optimization
  */
 export function constantFolding(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
   const transformed = transformNodeOrArray(ast, (node) => {
@@ -87,7 +87,7 @@ export function constantFolding(ast: AST.Node | AST.Node[]): AST.Node | AST.Node
       const left = node.left;
       const right = node.right;
 
-      // 数値リテラルの計算
+      // Calculate numeric literals
       if (left.type === 'NumberLiteral' && right.type === 'NumberLiteral') {
         let value: number;
 
@@ -109,7 +109,7 @@ export function constantFolding(ast: AST.Node | AST.Node[]): AST.Node | AST.Node
         } as AST.NumberLiteral;
       }
 
-      // 文字列結合
+      // String concatenation
       if (node.operator === '.' &&
         left.type === 'StringLiteral' &&
         right.type === 'StringLiteral') {
@@ -128,11 +128,11 @@ export function constantFolding(ast: AST.Node | AST.Node[]): AST.Node | AST.Node
 }
 
 /**
- * デッドコード削除
+ * Removes dead code from AST
  */
 export function removeDeadCode(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
   const transformed = transformNodeOrArray(ast, (node) => {
-    // return 後のコードを削除
+    // Remove code after return
     if (node.type === 'BlockStatement') {
       const statements = node.statements;
       const returnIndex = statements.findIndex(s =>
@@ -148,13 +148,13 @@ export function removeDeadCode(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[
       }
     }
 
-    // 常に false の if 文を削除
+    // Remove if statements that are always false
     if (node.type === 'IfStatement') {
       if (node.test.type === 'BooleanLiteral' && !(node.test as AST.BooleanLiteral).value) {
-        // else 部分のみ残す
+        // Keep only else part
         return node.alternate || null;
       }
-      // 常に true の if 文は then 部分のみ残す
+      // Keep only then part for always true if statements
       if (node.test.type === 'BooleanLiteral' && (node.test as AST.BooleanLiteral).value) {
         return node.consequent;
       }
@@ -167,16 +167,16 @@ export function removeDeadCode(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[
 }
 
 /**
- * 未使用変数を削除
+ * Removes unused variables from AST
  */
 export function removeUnusedVariables(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
-  // まず使用されている変数を収集
+  // First collect used variables
   const usedVariables = new Set<string>();
   const definedVariables = new Map<string, AST.Node[]>();
 
   const nodes = Array.isArray(ast) ? ast : [ast];
   nodes.forEach(node => walk(node, (n) => {
-    // 変数の使用
+    // Variable usage
     if (n.type === 'VariableExpression') {
       const varExpr = n as AST.VariableExpression;
       if (typeof varExpr.name === 'string') {
@@ -184,7 +184,7 @@ export function removeUnusedVariables(ast: AST.Node | AST.Node[]): AST.Node | AS
       }
     }
 
-    // 変数の定義
+    // Variable definition
     if (n.type === 'ExpressionStatement' &&
       n.expression.type === 'AssignmentExpression' &&
       n.expression.left.type === 'VariableExpression') {
@@ -199,14 +199,14 @@ export function removeUnusedVariables(ast: AST.Node | AST.Node[]): AST.Node | AS
     }
   }));
 
-  // 未使用の変数定義を削除
+  // Remove unused variable definitions
   const transformed = transformNodeOrArray(ast, (node) => {
     if (node.type === 'ExpressionStatement' &&
       node.expression.type === 'AssignmentExpression' &&
       node.expression.left.type === 'VariableExpression') {
       const varExpr = node.expression.left as AST.VariableExpression;
       if (typeof varExpr.name === 'string' && !usedVariables.has(varExpr.name)) {
-        return null; // 削除
+        return null; // Remove
       }
     }
 
@@ -217,10 +217,10 @@ export function removeUnusedVariables(ast: AST.Node | AST.Node[]): AST.Node | AS
 }
 
 /**
- * シンプルな関数をインライン展開
+ * Inlines simple functions into their call sites
  */
 export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
-  // シンプルな関数を収集
+  // Collect simple functions
   const simpleFunctions = new Map<string, AST.FunctionDeclaration>();
 
   const nodes = Array.isArray(ast) ? ast : [ast];
@@ -233,7 +233,7 @@ export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AS
     }
   }));
 
-  // 関数呼び出しをインライン展開
+  // Inline function calls
   const transformed = transformNodeOrArray(ast, (node) => {
     if (node.type === 'CallExpression' &&
       node.callee.type === 'Identifier' &&
@@ -242,21 +242,21 @@ export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AS
       const returnStmt = func.body.statements[0] as AST.ReturnStatement;
 
       if (returnStmt.value && func.parameters.length === node.arguments.length) {
-        // パラメータを引数で置換
+        // Replace parameters with arguments
         const paramMap = new Map<string, AST.Expression>();
         func.parameters.forEach((param, index) => {
           if (param.name.type === 'VariableExpression' && typeof param.name.name === 'string') {
-            // パラメータ名から $ を除去してマップに登録
+            // Remove $ from parameter name and register in map
             const paramName = param.name.name.substring(1);
             paramMap.set(paramName, node.arguments[index].value);
           }
         });
 
-        // returnStmt.value 内の変数を置換
+        // Replace variables in returnStmt.value
         const replaced = transform(returnStmt.value, (n) => {
           if (n.type === 'VariableExpression' && typeof n.name === 'string') {
-            // パラメータ名と一致する変数を引数で置換
-            const paramName = n.name.substring(1); // $ を除去
+            // Replace variables matching parameter names with arguments
+            const paramName = n.name.substring(1); // Remove $
             if (paramMap.has(paramName)) {
               return paramMap.get(paramName)!;
             }
@@ -275,7 +275,7 @@ export function inlineSimpleFunctions(ast: AST.Node | AST.Node[]): AST.Node | AS
 }
 
 /**
- * AST 検証
+ * Validates AST structure and semantics
  */
 export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
   const errors: ValidationError[] = [];
@@ -283,11 +283,11 @@ export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
 
   const nodes = Array.isArray(ast) ? ast : [ast];
   nodes.forEach(node => walk(node, (n, context) => {
-    // 未定義変数の使用をチェック
+    // Check for undefined variable usage
     if (n.type === 'VariableExpression') {
       const varExpr = n as AST.VariableExpression;
       if (typeof varExpr.name === 'string') {
-        // スコープ解析が必要（簡易版）
+        // Needs scope analysis (simplified version)
         const isDefined = checkVariableDefined(varExpr.name, context);
         if (!isDefined) {
           warnings.push({
@@ -300,7 +300,7 @@ export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
       }
     }
 
-    // 無限ループの可能性をチェック
+    // Check for possible infinite loops
     if (n.type === 'WhileStatement' &&
       n.test.type === 'BooleanLiteral' &&
       (n.test as AST.BooleanLiteral).value === true) {
@@ -312,7 +312,7 @@ export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
       });
     }
 
-    // break/continue がループ外で使用されていないかチェック
+    // Check if break/continue is used outside loops
     if (n.type === 'BreakStatement' || n.type === 'ContinueStatement') {
       const inLoop = isInLoop(context);
       if (!inLoop) {
@@ -334,14 +334,14 @@ export function validate(ast: AST.Node | AST.Node[]): ValidationResult {
 }
 
 /**
- * 変数が定義されているかチェック
+ * Checks if a variable is defined in the current scope
  */
 function checkVariableDefined(name: string, context: WalkContext): boolean {
-  // PHPのスーパーグローバル変数
+  // PHP superglobal variables
   const superGlobals = ['GLOBALS', '_SERVER', '_GET', '_POST', '_SESSION', '_COOKIE', '_FILES', '_ENV', '_REQUEST'];
   if (superGlobals.includes(name)) return true;
 
-  // $this は class/trait 内で常に定義されている
+  // $this is always defined inside class/trait
   if (name === 'this') {
     return context.parents.some(p =>
       p.type === 'ClassDeclaration' ||
@@ -350,11 +350,11 @@ function checkVariableDefined(name: string, context: WalkContext): boolean {
     );
   }
 
-  // 親ノードを遡って変数定義を探す
+  // Traverse parent nodes to find variable definitions
   for (let i = context.parents.length - 1; i >= 0; i--) {
     const parent = context.parents[i];
 
-    // 関数パラメータをチェック
+    // Check function parameters
     if (parent.type === 'FunctionDeclaration' || parent.type === 'MethodDeclaration' ||
       parent.type === 'FunctionExpression' || parent.type === 'ArrowFunctionExpression') {
       const params = (parent as any).parameters || [];
@@ -365,7 +365,7 @@ function checkVariableDefined(name: string, context: WalkContext): boolean {
       }
     }
 
-    // foreach の変数をチェック
+    // Check foreach variables
     if (parent.type === 'ForeachStatement') {
       const foreach = parent as AST.ForeachStatement;
       if (foreach.key && foreach.key.type === 'VariableExpression' &&
@@ -378,18 +378,18 @@ function checkVariableDefined(name: string, context: WalkContext): boolean {
       }
     }
 
-    // グローバルスコープに到達
+    // Reached global scope
     if (parent.type === 'Program') {
       break;
     }
   }
 
-  // 簡易的にfalseを返す（より詳細な実装にはSSA形式などが必要）
+  // Return false for simplicity (more detailed implementation needs SSA form etc.)
   return false;
 }
 
 /**
- * ループ内にいるかチェック
+ * Checks if current context is inside a loop
  */
 function isInLoop(context: WalkContext): boolean {
   return context.parents.some(p =>
@@ -402,7 +402,7 @@ function isInLoop(context: WalkContext): boolean {
 }
 
 /**
- * 検証結果
+ * Validation result interface
  */
 export interface ValidationResult {
   valid: boolean;
@@ -411,7 +411,7 @@ export interface ValidationResult {
 }
 
 /**
- * 検証エラー
+ * Validation error interface
  */
 export interface ValidationError {
   type: string;
@@ -421,7 +421,7 @@ export interface ValidationError {
 }
 
 /**
- * 検証警告
+ * Validation warning interface
  */
 export interface ValidationWarning {
   type: string;
@@ -431,7 +431,7 @@ export interface ValidationWarning {
 }
 
 /**
- * ソースマップを生成
+ * Generates source map for transformed AST
  */
 export function generateSourceMap(
   _original: AST.Node | AST.Node[],
@@ -439,7 +439,7 @@ export function generateSourceMap(
 ): SourceMap {
   const mappings: SourceMapping[] = [];
 
-  // ノードの位置情報を収集してマッピングを生成
+  // Collect node location information and generate mappings
   const collectMappings = (node: AST.Node, line: number = 0, column: number = 0): void => {
     if (node.location) {
       mappings.push({
@@ -450,7 +450,7 @@ export function generateSourceMap(
       });
     }
 
-    // 子ノードを走査（簡易実装）
+    // Traverse child nodes (simplified implementation)
     Object.values(node).forEach(value => {
       if (value && typeof value === 'object') {
         if ('type' in value && 'location' in value) {
@@ -466,7 +466,7 @@ export function generateSourceMap(
     });
   };
 
-  // 変換後のASTからマッピングを収集
+  // Collect mappings from transformed AST
   if (Array.isArray(_transformed)) {
     _transformed.forEach(node => collectMappings(node));
   } else {
@@ -481,7 +481,7 @@ export function generateSourceMap(
 }
 
 /**
- * ソースマップ
+ * Source map interface
  */
 export interface SourceMap {
   version: number;
@@ -490,7 +490,7 @@ export interface SourceMap {
 }
 
 /**
- * ソースマッピング
+ * Source mapping interface
  */
 interface SourceMapping {
   originalLine: number;
@@ -500,10 +500,10 @@ interface SourceMapping {
 }
 
 /**
- * マッピングをエンコード（簡易版）
+ * Encodes mappings (simplified version)
  */
 function encodeMappings(mappings: SourceMapping[]): string {
-  // 簡易的なVLQエンコーディング実装
+  // Simplified VLQ encoding implementation
   const vlqChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
   const encodeVLQ = (value: number): string => {
@@ -514,7 +514,7 @@ function encodeMappings(mappings: SourceMapping[]): string {
       let digit = vlq & 0x1f;
       vlq >>= 5;
       if (vlq > 0) {
-        digit |= 0x20; // 続きがあることを示すビット
+        digit |= 0x20; // Continuation bit
       }
       encoded += vlqChars[digit];
     } while (vlq > 0);
@@ -522,7 +522,7 @@ function encodeMappings(mappings: SourceMapping[]): string {
     return encoded;
   };
 
-  // マッピングをセグメントごとにエンコード
+  // Encode mappings per segment
   let result = '';
   let previousGeneratedLine = 0;
   let previousGeneratedColumn = 0;
@@ -531,20 +531,20 @@ function encodeMappings(mappings: SourceMapping[]): string {
 
   mappings.forEach((mapping, index) => {
     if (index > 0 && mapping.generatedLine > previousGeneratedLine) {
-      // 新しい行
+      // New line
       result += ';'.repeat(mapping.generatedLine - previousGeneratedLine);
       previousGeneratedColumn = 0;
     } else if (index > 0) {
       result += ',';
     }
 
-    // 相対値をエンコード
+    // Encode relative values
     result += encodeVLQ(mapping.generatedColumn - previousGeneratedColumn);
-    result += encodeVLQ(0); // ソースインデックス（単一ソース前提）
+    result += encodeVLQ(0); // Source index (assumes single source)
     result += encodeVLQ(mapping.originalLine - previousOriginalLine);
     result += encodeVLQ(mapping.originalColumn - previousOriginalColumn);
 
-    // 前の値を更新
+    // Update previous values
     previousGeneratedLine = mapping.generatedLine;
     previousGeneratedColumn = mapping.generatedColumn;
     previousOriginalLine = mapping.originalLine;
@@ -555,11 +555,11 @@ function encodeMappings(mappings: SourceMapping[]): string {
 }
 
 /**
- * AST を正規化（テスト用）
+ * Normalizes AST for testing (removes location info)
  */
 export function normalize(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
   const transformed = transformNodeOrArray(ast, (node) => {
-    // location を削除
+    // Remove location
     const { location, ...rest } = node as any;
     return rest;
   });
@@ -568,7 +568,7 @@ export function normalize(ast: AST.Node | AST.Node[]): AST.Node | AST.Node[] {
 }
 
 /**
- * AST を比較
+ * Compares two AST nodes for equality
  */
 export function isEqual(a: AST.Node, b: AST.Node): boolean {
   const normalizedA = normalize(a);
@@ -578,7 +578,7 @@ export function isEqual(a: AST.Node, b: AST.Node): boolean {
 }
 
 /**
- * AST の統計情報
+ * Collects statistics about AST structure
  */
 export function getStatistics(ast: AST.Node | AST.Node[]): ASTStatistics {
   const stats: ASTStatistics = {
@@ -619,7 +619,7 @@ export interface ASTStatistics {
 }
 
 /**
- * 非同期で変換を実行
+ * Performs asynchronous AST transformation
  */
 export async function transformAsync(
   ast: AST.Node | AST.Node[],
@@ -638,7 +638,7 @@ export async function transformAsync(
 }
 
 /**
- * ノードを非同期で変換（内部実装）
+ * Transforms node asynchronously (internal implementation)
  */
 async function transformNodeAsync(
   node: AST.Node,
@@ -654,14 +654,14 @@ async function transformNodeAsync(
     return null;
   }
 
-  // 子ノードを再帰的に変換
+  // Recursively transform child nodes
   const transformedChildren = await transformChildrenAsync(transformed, transformer);
 
   return transformedChildren;
 }
 
 /**
- * 子ノードを非同期で変換（内部実装）
+ * Transforms child nodes asynchronously (internal implementation)
  */
 async function transformChildrenAsync(
   node: AST.Node,
@@ -674,11 +674,11 @@ async function transformChildrenAsync(
 
     if (value && typeof value === 'object') {
       if ('type' in value) {
-        // 単一ノード
+        // Single node
         const result = await transformNodeAsync(value, transformer);
         transformed[key] = result;
       } else if (Array.isArray(value)) {
-        // ノードの配列
+        // Array of nodes
         const newArray: any[] = [];
         for (const item of value) {
           if (item && typeof item === 'object' && 'type' in item) {

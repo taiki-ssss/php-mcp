@@ -859,7 +859,7 @@ export class ExpressionParser extends ParserBase {
     }
 
     if (this.match(TokenKind.Print)) {
-      // print を関数呼び出しとして扱う
+      // Treat print as a function call
       const start = this.previous().location.start;
       const printIdentifier: AST.Identifier = {
         type: 'Identifier',
@@ -867,7 +867,7 @@ export class ExpressionParser extends ParserBase {
         location: this.previous().location
       };
       
-      // print の後に括弧がある場合は通常の関数呼び出しとして処理
+      // If parentheses follow print, handle as a regular function call
       if (this.check(TokenKind.LeftParen)) {
         this.advance(); // consume '('
         const args = this.parseArgumentList();
@@ -881,7 +881,7 @@ export class ExpressionParser extends ParserBase {
         };
       }
       
-      // 括弧なしの場合は PrintExpression として処理
+      // Without parentheses, handle as PrintExpression
       const expression = this.parseExpression();
       return {
         type: 'PrintExpression',

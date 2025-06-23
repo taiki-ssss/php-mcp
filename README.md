@@ -1,5 +1,7 @@
 # PHP MCP Server
 
+> ⚠️ This project is under active development. APIs and features may change without notice.
+
 A Model Context Protocol (MCP) server that provides semantic PHP code analysis and refactoring tools. This server enables AI assistants to perform safe, intelligent PHP code transformations at the AST level.
 
 ## Overview

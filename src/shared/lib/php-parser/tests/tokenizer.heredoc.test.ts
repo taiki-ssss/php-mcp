@@ -1,5 +1,5 @@
 /**
- * Heredoc/Nowdocのトークナイザーテスト
+ * Heredoc/Nowdoc tokenizer tests
  */
 
 import { describe, it, expect } from 'vitest';
@@ -7,7 +7,7 @@ import { tokenize } from '../lexer/tokenizer.js';
 import { TokenKind } from '../core/token.js';
 
 describe('Tokenizer - Heredoc/Nowdoc', () => {
-  it('基本的なHeredocをトークン化', () => {
+  it('tokenizes basic Heredoc', () => {
     const code = `<?php
 $str = <<<EOD
 Hello World
@@ -35,7 +35,7 @@ EOD;
     }
   });
 
-  it('基本的なNowdocをトークン化', () => {
+  it('tokenizes basic Nowdoc', () => {
     const code = `<?php
 $str = <<<'EOD'
 Hello World
@@ -61,7 +61,7 @@ EOD;
     expect(relevantTokens[5]).toMatchObject({ kind: TokenKind.Semicolon, text: ';' });
   });
 
-  it('空のHeredocをトークン化', () => {
+  it('tokenizes empty Heredoc', () => {
     const code = `<?php
 $str = <<<EOD
 EOD;
@@ -81,7 +81,7 @@ EOD;
     expect(relevantTokens[4]).toMatchObject({ kind: TokenKind.Semicolon, text: ';' });
   });
 
-  it('複数行のHeredocをトークン化', () => {
+  it('tokenizes multi-line Heredoc', () => {
     const code = `<?php
 $sql = <<<SQL
 SELECT *
@@ -110,7 +110,7 @@ SQL;
     expect(relevantTokens[5]).toMatchObject({ kind: TokenKind.Semicolon, text: ';' });
   });
 
-  it('セミコロンなしの終了ラベル', () => {
+  it('end label without semicolon', () => {
     const code = `<?php
 $str = <<<EOD
 Hello World

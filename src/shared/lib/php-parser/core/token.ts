@@ -20,13 +20,13 @@ import { SourceLocation } from './location.js';
  * - Special tokens (PHP tags, comments, etc.)
  */
 export enum TokenKind {
-  // リテラル
+  // Literals
   Number = 'Number',
   String = 'String',
   Identifier = 'Identifier',
   Variable = 'Variable',
 
-  // キーワード
+  // Keywords
   Abstract = 'abstract',
   And = 'and',
   Array = 'array',
@@ -102,7 +102,7 @@ export enum TokenKind {
   Xor = 'xor',
   Yield = 'yield',
 
-  // 演算子
+  // Operators
   Plus = '+',
   Minus = '-',
   Star = '*',
@@ -158,7 +158,7 @@ export enum TokenKind {
   PlusPlus = '++',
   MinusMinus = '--',
 
-  // 括弧
+  // Delimiters
   LeftParen = '(',
   RightParen = ')',
   LeftBracket = '[',
@@ -166,7 +166,7 @@ export enum TokenKind {
   LeftBrace = '{',
   RightBrace = '}',
 
-  // 特殊
+  // Special
   OpenTag = '<?php',
   OpenTagEcho = '<?=',
   CloseTag = '?>',
@@ -176,7 +176,7 @@ export enum TokenKind {
   Whitespace = 'Whitespace',
   Newline = 'Newline',
 
-  // 文字列補間
+  // String interpolation
   StringStart = 'StringStart',
   StringMiddle = 'StringMiddle',
   StringEnd = 'StringEnd',
@@ -186,10 +186,10 @@ export enum TokenKind {
   EndHeredoc = 'EndHeredoc',
   EncapsedAndWhitespace = 'EncapsedAndWhitespace',
   
-  // 属性
+  // Attributes
   Attribute = 'Attribute',
 
-  // 終端
+  // Termination
   EOF = 'EOF',
   Unknown = 'Unknown'
 }
@@ -476,13 +476,13 @@ export function createToken(kind: TokenKind, text: string, location: SourceLocat
  * with PHP's token_get_all() function.
  */
 export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
-  // PHP タグ
+  // PHP tags
   [TokenKind.OpenTag]: 'T_OPEN_TAG',
   [TokenKind.OpenTagEcho]: 'T_OPEN_TAG_WITH_ECHO',
   [TokenKind.CloseTag]: 'T_CLOSE_TAG',
   [TokenKind.InlineHTML]: 'T_INLINE_HTML',
   
-  // キーワード
+  // Keywords
   [TokenKind.If]: 'T_IF',
   [TokenKind.Else]: 'T_ELSE',
   [TokenKind.ElseIf]: 'T_ELSEIF',
@@ -529,7 +529,7 @@ export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
   [TokenKind.Or]: 'T_LOGICAL_OR',
   [TokenKind.Xor]: 'T_LOGICAL_XOR',
   
-  // リテラル・識別子
+  // Literals and identifiers
   [TokenKind.Variable]: 'T_VARIABLE',
   [TokenKind.String]: 'T_CONSTANT_ENCAPSED_STRING',
   [TokenKind.StringStart]: 'T_START_HEREDOC',
@@ -540,7 +540,7 @@ export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
   [TokenKind.Number]: 'T_LNUMBER',
   [TokenKind.Identifier]: 'T_STRING',
   
-  // 演算子
+  // Operators
   [TokenKind.EqualEqual]: 'T_IS_EQUAL',
   [TokenKind.BangEqual]: 'T_IS_NOT_EQUAL',
   [TokenKind.EqualEqualEqual]: 'T_IS_IDENTICAL',
@@ -575,7 +575,7 @@ export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
   [TokenKind.Instanceof]: 'T_INSTANCEOF',
   [TokenKind.StarStar]: 'T_POW',
   
-  // その他
+  // Others
   [TokenKind.Comment]: 'T_COMMENT',
   [TokenKind.DocComment]: 'T_DOC_COMMENT',
   [TokenKind.Whitespace]: 'T_WHITESPACE',
@@ -584,7 +584,7 @@ export const TOKEN_TYPE_MAP: Partial<Record<TokenKind, string>> = {
   [TokenKind.Backslash]: 'T_NS_SEPARATOR',
   [TokenKind.Attribute]: 'T_ATTRIBUTE',
   
-  // 記号（PHPトークンタイプを持たないもの）
+  // Symbols (without PHP token types)
   [TokenKind.LeftParen]: '(',
   [TokenKind.RightParen]: ')',
   [TokenKind.LeftBracket]: '[',
@@ -633,10 +633,10 @@ export function createExtendedToken(
   location: SourceLocation,
   data?: any
 ): Token {
-  // 数値の場合、整数か浮動小数点かを判定
+  // Determine if number is integer or float
   let phpType = TOKEN_TYPE_MAP[kind] || kind;
   if (kind === TokenKind.Number) {
-    // 浮動小数点数の判定
+    // Check if it's a floating point number
     if (text.includes('.') || text.toLowerCase().includes('e')) {
       phpType = 'T_DNUMBER';
     } else {
@@ -652,10 +652,10 @@ export function createExtendedToken(
     value: text
   };
 
-  // トークンタイプに応じて適切な型を返す
+  // Return appropriate type based on token kind
   switch (kind) {
     case TokenKind.Number:
-      // valueプロパティは元のテキストを保持（PHPトークナイザー互換）
+      // Value property holds original text (PHP tokenizer compatible)
       return { ...base, kind, value: text, type: phpType } as NumberToken;
     
     case TokenKind.String:

@@ -1,29 +1,29 @@
 /**
- * AST ビジター パターン
- * 互換性のために残されているレガシー実装
+ * AST Visitor Pattern
+ * Legacy implementation kept for compatibility
  */
 
 import type * as AST from '../core/ast.js';
 
 /**
- * ビジターインターフェース（レガシー）
- * @deprecated walker.ts の関数型 API を使用してください
+ * Visitor interface (legacy)
+ * @deprecated Use function-based API from walker.ts
  */
 export interface NodeVisitor {
   /**
-   * ノード訪問前
+   * Called before visiting a node
    */
   enterNode?(node: AST.Node, parent?: AST.Node): AST.Node | null | undefined | false;
 
   /**
-   * ノード訪問後
+   * Called after visiting a node
    */
   leaveNode?(node: AST.Node, parent?: AST.Node): AST.Node | null | undefined;
 }
 
 /**
- * ビジター抽象クラス（レガシー）
- * @deprecated walker.ts の walk 関数を使用してください
+ * Abstract visitor class (legacy)
+ * @deprecated Use walk function from walker.ts
  */
 export abstract class NodeVisitorAbstract implements NodeVisitor {
   enterNode?(node: AST.Node, parent?: AST.Node): AST.Node | null | undefined | false;
@@ -31,14 +31,14 @@ export abstract class NodeVisitorAbstract implements NodeVisitor {
 }
 
 /**
- * 特定のノードタイプ用ビジター（レガシー）
- * @deprecated walker.ts の findNodes/findFirst を使用してください
+ * Typed node visitor (legacy)
+ * @deprecated Use findNodes/findFirst from walker.ts
  */
 export class TypedNodeVisitor extends NodeVisitorAbstract {
   private handlers = new Map<string, (node: AST.Node, parent?: AST.Node) => any>();
 
   /**
-   * ノードタイプごとのハンドラーを登録
+   * Register handler for specific node type
    */
   on<T extends AST.Node>(
     type: T['type'],
@@ -58,8 +58,8 @@ export class TypedNodeVisitor extends NodeVisitorAbstract {
 }
 
 /**
- * 複数のビジターを合成（レガシー）
- * @deprecated pipe 関数と walker を組み合わせて使用してください
+ * Composite visitor (legacy)
+ * @deprecated Use pipe function combined with walker
  */
 export class CompositeVisitor extends NodeVisitorAbstract {
   private visitors: NodeVisitor[];
@@ -95,8 +95,8 @@ export class CompositeVisitor extends NodeVisitorAbstract {
 }
 
 /**
- * 変数収集ビジター（レガシー例）
- * @deprecated 以下のように walker を使用してください:
+ * Variable collector visitor (legacy example)
+ * @deprecated Use walker as follows:
  * ```typescript
  * const variables = findNodes(ast, (node): node is AST.VariableExpression => 
  *   node.type === 'VariableExpression'
@@ -118,8 +118,8 @@ export class VariableCollector extends NodeVisitorAbstract {
 }
 
 /**
- * 名前変更ビジター（レガシー例）
- * @deprecated 以下のように transform を使用してください:
+ * Rename visitor (legacy example)
+ * @deprecated Use transform as follows:
  * ```typescript
  * const renamed = transform(ast, (node) => {
  *   if (node.type === 'Identifier' && node.name === oldName) {
@@ -152,8 +152,8 @@ export class RenameVisitor extends NodeVisitorAbstract {
 }
 
 /**
- * ノード削除ビジター（レガシー）
- * @deprecated transform で null を返すことで削除できます
+ * Remove node visitor (legacy)
+ * @deprecated Return null in transform to remove nodes
  */
 export class RemoveNodeVisitor extends NodeVisitorAbstract {
   constructor(
@@ -171,33 +171,33 @@ export class RemoveNodeVisitor extends NodeVisitorAbstract {
 }
 
 /**
- * ビジターファクトリー（レガシー）
- * @deprecated 直接関数を使用してください
+ * Visitor factory (legacy)
+ * @deprecated Use functions directly
  */
 export const visitors = {
   /**
-   * 変数を収集
+   * Collect variables
    */
   collectVariables(): VariableCollector {
     return new VariableCollector();
   },
 
   /**
-   * 識別子をリネーム
+   * Rename identifiers
    */
   rename(oldName: string, newName: string): RenameVisitor {
     return new RenameVisitor(oldName, newName);
   },
 
   /**
-   * ノードを削除
+   * Remove nodes
    */
   remove(predicate: (node: AST.Node) => boolean): RemoveNodeVisitor {
     return new RemoveNodeVisitor(predicate);
   },
 
   /**
-   * カスタムビジターを作成
+   * Create custom visitor
    */
   create(handlers: {
     enter?: (node: AST.Node, parent?: AST.Node) => any;
@@ -211,7 +211,7 @@ export const visitors = {
 };
 
 /**
- * ビジター作成ヘルパー関数
+ * Visitor creation helper function
  */
 export function createVisitor(handlers: {
   [key: string]: ((node: any, parent?: AST.Node) => any) | {

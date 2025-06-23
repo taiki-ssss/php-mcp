@@ -727,19 +727,19 @@ export type Declaration =
  * Expressions are values or computations that produce values.
  */
 export type Expression =
-  // リテラル
+  // Literals
   | NumberLiteral
   | StringLiteral
   | BooleanLiteral
   | NullLiteral
   | ArrayExpression
   | ObjectExpression
-  // 識別子・名前
+  // Identifiers & Names
   | Identifier
   | VariableExpression
   | NameExpression
   | QualifiedName
-  // 演算子
+  // Operators
   | BinaryExpression
   | UnaryExpression
   | UpdateExpression
@@ -747,11 +747,11 @@ export type Expression =
   | LogicalExpression
   | ConditionalExpression
   | SequenceExpression
-  // メンバーアクセス
+  // Member Access
   | MemberExpression
   | CallExpression
   | NewExpression
-  // 特殊
+  // Special
   | FunctionExpression
   | ArrowFunctionExpression
   | ClassExpression

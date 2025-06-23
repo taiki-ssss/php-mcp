@@ -1,5 +1,5 @@
 /**
- * PHP Parser - モダンな TypeScript 実装
+ * PHP Parser - Modern TypeScript Implementation
  * 
  * @example
  * ```typescript
@@ -42,7 +42,7 @@ import type { Token } from './core/token.js';
 import { Result, ok, err } from './utils/result.js';
 
 /**
- * PHP コードをトークン化
+ * Tokenize PHP code
  * 
  * @example
  * ```typescript
@@ -62,7 +62,7 @@ export function tokenizePhp(
 }
 
 /**
- * PHP コードをパース
+ * Parse PHP code
  * 
  * @example
  * ```typescript
@@ -87,7 +87,7 @@ export function parsePhp(
 }
 
 /**
- * パイプライン関数を作成
+ * Create a pipeline function
  * 
  * @example
  * ```typescript
@@ -131,7 +131,7 @@ export function pipe(...fns: Function[]): Function {
 }
 
 /**
- * 非同期パイプライン関数を作成
+ * Create an async pipeline function
  * 
  * @example
  * ```typescript
@@ -140,7 +140,7 @@ export function pipe(...fns: Function[]): Function {
  *   tokenizePhp,
  *   (tokens) => parse(tokens),
  *   async (ast) => {
- *     // 非同期処理
+ *     // Async processing
  *     return transformedAst;
  *   }
  * );
@@ -177,7 +177,7 @@ export function pipeAsync(...fns: Function[]): (value: any) => Promise<any> {
 }
 
 /**
- * エラーハンドリング付きパイプライン
+ * Pipeline with error handling
  * 
  * @example
  * ```typescript
@@ -215,7 +215,7 @@ export function tryPipe(...fns: Function[]): Function {
 }
 
 /**
- * 部分適用ヘルパー
+ * Partial application helper
  * 
  * @example
  * ```typescript
@@ -234,13 +234,13 @@ export function partial<T extends any[], R>(
 }
 
 /**
- * メモ化ヘルパー
+ * Memoization helper
  * 
  * @example
  * ```typescript
  * const memoizedParse = memoize(parsePhp);
- * const ast1 = memoizedParse(code); // パース実行
- * const ast2 = memoizedParse(code); // キャッシュから取得
+ * const ast1 = memoizedParse(code); // Parse executed
+ * const ast2 = memoizedParse(code); // Retrieved from cache
  * ```
  */
 export function memoize<T extends (...args: any[]) => any>(
@@ -263,7 +263,7 @@ export function memoize<T extends (...args: any[]) => any>(
 }
 
 /**
- * デバッグヘルパー
+ * Debug helper
  * 
  * @example
  * ```typescript
@@ -285,7 +285,7 @@ export function tap<T>(
 }
 
 /**
- * 条件付き変換
+ * Conditional transformation
  * 
  * @example
  * ```typescript

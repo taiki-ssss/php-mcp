@@ -9,12 +9,12 @@
 import * as AST from '../core/ast.js';
 
 /**
- * ウォーカーの戻り値型
+ * Walker return value type
  */
 export type WalkResult<T = void> = T | undefined | 'skip' | 'stop';
 
 /**
- * ウォーカー関数の型
+ * Walker function type
  */
 export type WalkerFunction<T = void> = (
   node: AST.Node,
@@ -22,19 +22,19 @@ export type WalkerFunction<T = void> = (
 ) => WalkResult<T>;
 
 /**
- * ウォークコンテキスト
+ * Walk context interface
  */
 export interface WalkContext {
-  /** 親ノードのスタック */
+  /** Stack of parent nodes */
   readonly parents: AST.Node[];
-  /** 現在の深さ */
+  /** Current depth in the tree */
   readonly depth: number;
-  /** ユーザー定義のコンテキスト */
+  /** User-defined context data */
   readonly userContext?: any;
 }
 
 /**
- * AST を走査
+ * Walks through AST nodes
  */
 export function walk<T = void>(
   node: AST.Node | AST.Node[],
@@ -83,27 +83,27 @@ function walkNode<T>(
   walker: WalkerFunction<T>,
   context: WalkContext
 ): WalkResult<T> {
-  // ウォーカー関数を呼び出す
+  // Call walker function
   const result = walker(node, context);
 
-  // 制御フロー
+  // Control flow
   if (result === 'skip' || result === 'stop') {
     return result;
   }
 
-  // 値が返された場合は終了
+  // Stop if value returned
   if (result !== undefined) {
     return result;
   }
 
-  // 子ノードを走査
+  // Walk child nodes
   const newContext: WalkContext = {
     parents: [...context.parents, node],
     depth: context.depth + 1,
     userContext: context.userContext
   };
 
-  // ノードタイプごとの子ノード走査
+  // Walk children based on node type
   const childResult = walkChildren(node, walker, newContext);
   if (childResult !== undefined) {
     return childResult;
@@ -324,9 +324,9 @@ function walkChildren<T>(
     case 'VariableExpression':
       return undefined;
 
-    // その他のノードタイプ
+    // Other node types
     default:
-      // 汎用的な子ノード走査
+      // Generic child node traversal
       return walkGenericChildren(node, walker, context);
   }
 }
@@ -373,11 +373,11 @@ function walkGenericChildren<T>(
 
     if (value && typeof value === 'object') {
       if ('type' in value) {
-        // 単一ノード
+        // Single node
         const result = walkNode(value, walker, context);
         if (result !== undefined) return result;
       } else if (Array.isArray(value)) {
-        // ノードの配列
+        // Array of nodes
         for (const item of value) {
           if (item && typeof item === 'object' && 'type' in item) {
             const result = walkNode(item, walker, context);
@@ -395,7 +395,7 @@ function walkGenericChildren<T>(
 }
 
 /**
- * 特定のノードタイプを検索
+ * Finds all nodes matching a predicate
  */
 export function findNodes<T extends AST.Node>(
   root: AST.Node | AST.Node[],
@@ -413,7 +413,7 @@ export function findNodes<T extends AST.Node>(
 }
 
 /**
- * 最初にマッチするノードを検索
+ * Finds first node matching a predicate
  */
 export function findFirst<T extends AST.Node>(
   root: AST.Node | AST.Node[],
@@ -427,7 +427,7 @@ export function findFirst<T extends AST.Node>(
 }
 
 /**
- * ノードを変換
+ * Transforms AST node
  */
 export function transform<T extends AST.Node = AST.Node>(
   node: T,
@@ -440,7 +440,7 @@ export function transform<T extends AST.Node = AST.Node>(
     return null;
   }
 
-  // 子ノードを再帰的に変換
+  // Recursively transform child nodes
   const transformedChildren = transformChildren(transformed, transformer, context);
 
   return transformedChildren as T;
@@ -466,7 +466,7 @@ function transformChildren(
 
     if (value && typeof value === 'object') {
       if ('type' in value) {
-        // 単一ノード
+        // Single node
         const childContext: WalkContext = {
           parents: [...parentContext.parents, node],
           depth: parentContext.depth + 1,
@@ -475,7 +475,7 @@ function transformChildren(
         const result = transform(value, transformer, childContext);
         transformed[key] = result;
       } else if (Array.isArray(value)) {
-        // ノードの配列
+        // Array of nodes
         const newArray: any[] = [];
         for (const item of value) {
           if (item && typeof item === 'object' && 'type' in item) {
@@ -501,7 +501,7 @@ function transformChildren(
 }
 
 /**
- * ノードタイプチェッカー
+ * Node type checkers
  */
 export const is = {
   Statement: (node: AST.Node): node is AST.Statement => {
@@ -527,7 +527,7 @@ export const is = {
 };
 
 /**
- * 非同期でASTを走査
+ * Walks through AST nodes asynchronously
  */
 export async function walkAsync<T = void>(
   node: AST.Node | AST.Node[],
@@ -571,27 +571,27 @@ async function walkNodeAsync<T>(
   walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
   context: WalkContext
 ): Promise<WalkResult<T>> {
-  // ウォーカー関数を呼び出す
+  // Call walker function
   const result = await walker(node, context);
 
-  // 制御フロー
+  // Control flow
   if (result === 'skip' || result === 'stop') {
     return result;
   }
 
-  // 値が返された場合は終了
+  // Stop if value returned
   if (result !== undefined) {
     return result;
   }
 
-  // 子ノードを走査
+  // Walk child nodes
   const newContext: WalkContext = {
     parents: [...context.parents, node],
     depth: context.depth + 1,
     userContext: context.userContext
   };
 
-  // ノードタイプごとの子ノード走査
+  // Walk children based on node type
   const childResult = await walkChildrenAsync(node, walker, newContext);
   if (childResult !== undefined) {
     return childResult;
@@ -811,9 +811,9 @@ async function walkChildrenAsync<T>(
     case 'VariableExpression':
       return undefined;
 
-    // その他のノードタイプ
+    // Other node types
     default:
-      // 汎用的な子ノード走査
+      // Generic child node traversal
       return await walkGenericChildrenAsync(node, walker, context);
   }
 }
@@ -836,11 +836,11 @@ async function walkGenericChildrenAsync<T>(
 
     if (value && typeof value === 'object') {
       if ('type' in value) {
-        // 単一ノード
+        // Single node
         const result = await walkNodeAsync(value, walker, context);
         if (result !== undefined) return result;
       } else if (Array.isArray(value)) {
-        // ノードの配列
+        // Array of nodes
         for (const item of value) {
           if (item && typeof item === 'object' && 'type' in item) {
             const result = await walkNodeAsync(item, walker, context);

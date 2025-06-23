@@ -1,65 +1,65 @@
 /**
- * レクサー状態管理
- * 文字列補間やヒアドキュメントなどの複雑な状態を管理
+ * Lexer State Management
+ * Manages complex states like string interpolation and heredoc
  */
 
 import { Token, TokenKind } from '../core/token.js';
 
 /**
- * レクサーの状態タイプ
+ * Lexer state types
  */
 export enum LexerState {
-  /** 通常の PHP コード */
+  /** Normal PHP code */
   Normal = 'Normal',
-  /** ダブルクォート文字列内 */
+  /** Inside double-quoted string */
   InDoubleQuoteString = 'InDoubleQuoteString',
-  /** ヒアドキュメント内 */
+  /** Inside heredoc */
   InHeredoc = 'InHeredoc',
-  /** 文字列内の変数展開 */
+  /** Variable expansion in string */
   InStringInterpolation = 'InStringInterpolation',
-  /** バックティック（シェル実行）内 */
+  /** Inside backtick (shell execution) */
   InBacktick = 'InBacktick',
-  /** 複雑な変数展開 ${...} 内 */
+  /** Inside complex interpolation ${...} */
   InComplexInterpolation = 'InComplexInterpolation'
 }
 
 /**
- * 文字列補間のコンテキスト
+ * String interpolation context
  */
 export interface StringContext {
-  /** 文字列の種類 */
+  /** String type */
   type: 'double' | 'heredoc' | 'backtick';
-  /** 終了デリミタ */
+  /** End delimiter */
   delimiter?: string;
-  /** ネストレベル */
+  /** Nesting level */
   nestLevel: number;
-  /** 補間の深さ */
+  /** Interpolation depth */
   interpolationDepth: number;
 }
 
 /**
- * レクサー状態マネージャー
+ * Lexer state manager
  */
 export class LexerStateManager {
   private stateStack: LexerState[] = [LexerState.Normal];
   private stringContextStack: StringContext[] = [];
 
   /**
-   * 現在の状態を取得
+   * Get current state
    */
   get currentState(): LexerState {
     return this.stateStack[this.stateStack.length - 1];
   }
 
   /**
-   * 現在の文字列コンテキストを取得
+   * Get current string context
    */
   get currentStringContext(): StringContext | undefined {
     return this.stringContextStack[this.stringContextStack.length - 1];
   }
 
   /**
-   * 新しい状態をプッシュ
+   * Push new state
    */
   pushState(state: LexerState, context?: StringContext): void {
     this.stateStack.push(state);
@@ -69,13 +69,13 @@ export class LexerStateManager {
   }
 
   /**
-   * 状態をポップ
+   * Pop state
    */
   popState(): LexerState | undefined {
     if (this.stateStack.length > 1) {
       const state = this.stateStack.pop();
 
-      // 文字列関連の状態の場合、コンテキストもポップ
+      // For string-related states, also pop context
       if (state && this.isStringState(state)) {
         this.stringContextStack.pop();
       }
@@ -86,7 +86,7 @@ export class LexerStateManager {
   }
 
   /**
-   * 文字列関連の状態かチェック
+   * Check if state is string-related
    */
   private isStringState(state: LexerState): boolean {
     return state === LexerState.InDoubleQuoteString ||
@@ -97,7 +97,7 @@ export class LexerStateManager {
   }
 
   /**
-   * 状態をリセット
+   * Reset state
    */
   reset(): void {
     this.stateStack = [LexerState.Normal];
@@ -105,7 +105,7 @@ export class LexerStateManager {
   }
 
   /**
-   * トークンによる状態遷移
+   * State transition by token
    */
   transitionByToken(token: Token): void {
     switch (this.currentState) {
@@ -130,13 +130,13 @@ export class LexerStateManager {
   }
 
   /**
-   * 通常状態でのトークン処理
+   * Handle token in normal state
    */
   private handleNormalState(token: Token): void {
     switch (token.kind) {
       case TokenKind.String:
         if ('quote' in token && token.quote === '"') {
-          // ダブルクォート文字列の開始
+          // Start of double-quoted string
           this.pushState(LexerState.InDoubleQuoteString, {
             type: 'double',
             nestLevel: 0,
@@ -145,40 +145,40 @@ export class LexerStateManager {
         }
         break;
 
-      // ヒアドキュメントやバックティックの処理も同様に実装
+      // Heredoc and backtick handling implemented similarly
     }
   }
 
   /**
-   * 文字列状態でのトークン処理
+   * Handle token in string state
    */
   private handleStringState(token: Token): void {
     const context = this.currentStringContext;
     if (!context) return;
 
-    // 変数の開始をチェック
+    // Check for variable start
     if (token.kind === TokenKind.Variable) {
       this.pushState(LexerState.InStringInterpolation);
       context.interpolationDepth++;
     }
 
-    // ${...} の開始をチェック
+    // Check for ${...} start
     if (token.kind === TokenKind.Dollar && this.peekNextToken()?.kind === TokenKind.LeftBrace) {
       this.pushState(LexerState.InComplexInterpolation);
       context.nestLevel++;
     }
 
-    // 文字列の終了をチェック
+    // Check for string end
     if (token.kind === TokenKind.StringEnd) {
       this.popState();
     }
   }
 
   /**
-   * 補間状態でのトークン処理
+   * Handle token in interpolation state
    */
   private handleInterpolationState(token: Token): void {
-    // 補間の終了条件をチェック
+    // Check interpolation end condition
     if (!this.isInterpolationContinuation(token)) {
       this.popState();
       const context = this.currentStringContext;
@@ -189,7 +189,7 @@ export class LexerStateManager {
   }
 
   /**
-   * 複雑な補間状態でのトークン処理
+   * Handle token in complex interpolation state
    */
   private handleComplexInterpolationState(token: Token): void {
     const context = this.currentStringContext;
@@ -206,32 +206,32 @@ export class LexerStateManager {
   }
 
   /**
-   * 補間が継続するかチェック
+   * Check if interpolation continues
    */
   private isInterpolationContinuation(token: Token): boolean {
-    // 変数の後に続く可能性のあるトークン
-    return token.kind === TokenKind.LeftBracket ||  // 配列アクセス
-      token.kind === TokenKind.Arrow ||         // プロパティアクセス
-      token.kind === TokenKind.DoubleColon;     // 静的アクセス
+    // Tokens that can follow a variable
+    return token.kind === TokenKind.LeftBracket ||  // Array access
+      token.kind === TokenKind.Arrow ||         // Property access
+      token.kind === TokenKind.DoubleColon;     // Static access
   }
 
   /**
-   * 次のトークンをプレビュー（実装は tokenizer に依存）
+   * Preview next token (implementation depends on tokenizer)
    */
   private peekNextToken(): Token | undefined {
-    // この機能は tokenizer との連携が必要
+    // This feature requires integration with tokenizer
     return undefined;
   }
 
   /**
-   * 現在の状態に基づいて期待されるトークンを取得
+   * Get expected tokens based on current state
    */
   getExpectedTokens(): Set<TokenKind> {
     const expected = new Set<TokenKind>();
 
     switch (this.currentState) {
       case LexerState.Normal:
-        // すべての通常トークンが可能
+        // All normal tokens are possible
         break;
 
       case LexerState.InDoubleQuoteString:
@@ -243,7 +243,7 @@ export class LexerStateManager {
         break;
 
       case LexerState.InComplexInterpolation:
-        // 式として有効なすべてのトークン
+        // All tokens valid in expressions
         break;
     }
 
@@ -252,12 +252,12 @@ export class LexerStateManager {
 }
 
 /**
- * 文字列補間トークナイザー
- * 文字列内の変数展開を処理
+ * String interpolation tokenizer
+ * Processes variable expansion in strings
  */
 export class StringInterpolationTokenizer {
   /**
-   * 文字列を補間トークンに分解
+   * Tokenize interpolated string into tokens
    */
   static tokenizeInterpolatedString(
     content: string,
@@ -266,33 +266,33 @@ export class StringInterpolationTokenizer {
     const tokens: Token[] = [];
 
     if (quoteType === "'" || quoteType === 'nowdoc') {
-      // 補間なし
+      // No interpolation
       return tokens;
     }
 
-    // 簡易的な実装：実際はもっと複雑
+    // Simplified implementation: actual implementation is more complex
     let current = '';
     let i = 0;
 
     while (i < content.length) {
       if (content[i] === '$' && i + 1 < content.length) {
-        // 変数の可能性をチェック
+        // Check for variable possibility
         if (content[i + 1] === '{' || /[a-zA-Z_]/.test(content[i + 1])) {
-          // 現在の文字列部分をトークン化
+          // Tokenize current string part
           if (current) {
-            // StringMiddle トークンを作成
+            // Create StringMiddle token
             current = '';
           }
 
-          // 変数部分を処理
+          // Process variable part
           if (content[i + 1] === '{') {
-            // ${...} 形式
-            i += 2; // ${ をスキップ
-            // 複雑な式の処理
+            // ${...} format
+            i += 2; // Skip ${
+            // Process complex expression
           } else {
-            // $var 形式
-            i++; // $ をスキップ
-            // 変数名を読み取り
+            // $var format
+            i++; // Skip $
+            // Read variable name
           }
           continue;
         }
@@ -302,9 +302,9 @@ export class StringInterpolationTokenizer {
       i++;
     }
 
-    // 残りの文字列部分
+    // Remaining string part
     if (current) {
-      // StringMiddle トークンを作成
+      // Create StringMiddle token
     }
 
     return tokens;

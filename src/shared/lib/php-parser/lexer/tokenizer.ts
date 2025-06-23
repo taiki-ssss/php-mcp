@@ -11,19 +11,19 @@ import { SourcePosition, createLocation } from '../core/location.js';
 import { Scanner, CharUtils } from './scanner.js';
 
 /**
- * トークナイザーのオプション
+ * Tokenizer options
  */
 export interface TokenizerOptions {
-  /** コメントを保持するか */
+  /** Whether to preserve comments */
   preserveComments?: boolean;
-  /** 空白を保持するか */
+  /** Whether to preserve whitespace */
   preserveWhitespace?: boolean;
-  /** PHP タグ外の HTML を保持するか */
+  /** Whether to preserve HTML outside PHP tags */
   preserveInlineHTML?: boolean;
 }
 
 /**
- * PHP コードをトークン化
+ * Tokenize PHP code
  */
 export class Tokenizer {
   private scanner: Scanner;
@@ -45,7 +45,7 @@ export class Tokenizer {
   }
 
   /**
-   * 全てのトークンを取得
+   * Get all tokens
    */
   tokenize(): Token[] {
     const tokens: Token[] = [];
@@ -53,7 +53,7 @@ export class Tokenizer {
     while (!this.scanner.isAtEnd()) {
       const token = this.nextToken();
 
-      // フィルタリング
+      // Filtering
       if (!this.shouldKeepToken(token)) {
         continue;
       }
@@ -61,7 +61,7 @@ export class Tokenizer {
       tokens.push(token);
     }
 
-    // EOF トークンを追加しない（PHP互換性のため）
+    // Don't add EOF token (for PHP compatibility)
 
     return tokens;
   }
@@ -97,18 +97,18 @@ export class Tokenizer {
   private nextToken(): Token {
     const start = this.scanner.getCurrentPosition();
 
-    // Heredoc/Nowdocの内容処理中
+    // Processing Heredoc/Nowdoc content
     if (this.pendingHeredoc) {
       const content = this.scanHeredocContent();
       if (content) return content;
     }
 
-    // PHP タグ外の処理
+    // Processing outside PHP tags
     if (!this.inPhpTag) {
       return this.scanOutsidePhp(start);
     }
 
-    // 空白スキップ
+    // Skip whitespace
     const whitespace = this.scanner.consumeWhile((char: string) =>
       CharUtils.isWhitespace(char) && !CharUtils.isNewline(char)
     );
@@ -116,10 +116,10 @@ export class Tokenizer {
       return this.makeToken(TokenKind.Whitespace, whitespace, start);
     }
 
-    // 改行
+    // Newline
     if (CharUtils.isNewline(this.scanner.peek())) {
       const newline = this.scanner.advance();
-      // Windows CRLF 対応
+      // Windows CRLF support
       if (newline === '\r' && this.scanner.peek() === '\n') {
         this.scanner.advance();
         return this.makeToken(TokenKind.Newline, '\r\n', start);
@@ -129,7 +129,7 @@ export class Tokenizer {
 
     const char = this.scanner.peek();
 
-    // コメント
+    // Comment
     if (char === '/') {
       const next = this.scanner.peek(1);
       if (next === '/') {
@@ -139,21 +139,21 @@ export class Tokenizer {
       }
     }
 
-    // # コメントまたは属性
+    // # comment or attribute
     if (char === '#') {
-      // 属性のチェック（#[）
+      // Check for attribute (#[)
       if (this.scanner.peek(1) === '[') {
         return this.scanAttribute(start);
       }
       return this.scanHashComment(start);
     }
 
-    // 文字列
+    // String
     if (char === '"' || char === "'") {
       return this.scanString(start);
     }
 
-    // バックティック（シェル実行）
+    // Backtick (shell execution)
     if (char === '`') {
       return this.scanBacktickString(start);
     }
@@ -163,22 +163,22 @@ export class Tokenizer {
       return this.scanHeredoc(start);
     }
 
-    // 数値（.25のような小数点で始まる数値も対応）
+    // Number (also supports decimals starting with . like .25)
     if (CharUtils.isDigit(char) || (char === '.' && CharUtils.isDigit(this.scanner.peek(1)))) {
       return this.scanNumber(start);
     }
 
-    // 変数
+    // Variable
     if (char === '$') {
       return this.scanVariable(start);
     }
 
-    // 識別子・キーワード
+    // Identifier or keyword
     if (CharUtils.isIdentifierStart(char)) {
       return this.scanIdentifierOrKeyword(start);
     }
 
-    // 演算子・記号
+    // Operators and punctuation
     return this.scanOperatorOrPunctuation(start);
   }
 
@@ -190,10 +190,10 @@ export class Tokenizer {
    * @returns InlineHTML or PHP opening tag token
    */
   private scanOutsidePhp(start: SourcePosition): Token {
-    // <?php タグをチェック
+    // Check for <?php tag
     if (this.scanner.matches('<?php')) {
       this.scanner.skip(5);
-      // タグの後の空白文字を含める
+      // Include whitespace after tag
       let tagText = '<?php';
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
@@ -202,10 +202,10 @@ export class Tokenizer {
       return this.makeToken(TokenKind.OpenTag, tagText, start);
     }
 
-    // <?= タグをチェック
+    // Check for <?= tag
     if (this.scanner.matches('<?=')) {
       this.scanner.skip(3);
-      // タグの後の空白文字を含める
+      // Include whitespace after tag
       let tagText = '<?=';
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
@@ -214,10 +214,10 @@ export class Tokenizer {
       return this.makeToken(TokenKind.OpenTagEcho, tagText, start);
     }
 
-    // <? タグをチェック（short_open_tag）
+    // Check for <? tag (short_open_tag)
     if (this.scanner.matches('<?') && !this.scanner.matches('<?xml')) {
       this.scanner.skip(2);
-      // タグの後の空白文字を含める
+      // Include whitespace after tag
       let tagText = '<?';
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
@@ -226,7 +226,7 @@ export class Tokenizer {
       return this.makeToken(TokenKind.OpenTag, tagText, start);
     }
 
-    // インライン HTML
+    // Inline HTML
     const html = this.scanner.consumeUntil(char =>
       this.scanner.matches('<?php') ||
       this.scanner.matches('<?=') ||
@@ -345,7 +345,7 @@ export class Tokenizer {
    * @returns StartHeredoc token
    */
   private scanHeredoc(start: SourcePosition): Token {
-    // Heredoc/Nowdocのラベルを解析
+    // Parse Heredoc/Nowdoc label
     this.scanner.skip(3); // <<<
     this.scanner.consumeWhile(char => CharUtils.isWhitespace(char));
 
@@ -358,18 +358,18 @@ export class Tokenizer {
 
     const startText = `<<<${isNowdoc ? "'" : ""}${label}${isNowdoc ? "'" : ""}`;
 
-    // 改行まで読み飛ばす
+    // Skip to newline
     this.scanner.consumeUntil((char: string) => CharUtils.isNewline(char));
     if (!this.scanner.isAtEnd()) this.scanner.advance();
 
-    // StartHeredocトークンを作成
+    // Create StartHeredoc token
     const startToken = createToken(
       TokenKind.StartHeredoc,
       startText,
       createLocation(start, this.scanner.getCurrentPosition())
     );
 
-    // Heredoc/Nowdocの内容を保存
+    // Save Heredoc/Nowdoc content
     this.pendingHeredoc = {
       label,
       isNowdoc,
@@ -392,20 +392,20 @@ export class Tokenizer {
     const { label } = this.pendingHeredoc;
     const start = this.scanner.getCurrentPosition();
 
-    // 内容を収集
+    // Collect content
     let content = '';
     let lineStart = this.scanner.getCurrentPosition().column === 1;
 
     while (!this.scanner.isAtEnd()) {
-      // 行頭でのみ終了ラベルをチェック
+      // Check for end label only at line start
       if (lineStart && this.scanner.matches(label)) {
         const savedState = this.scanner.save();
         this.scanner.skip(label.length);
 
-        // ラベルの後は改行か ; のみ許可
+        // Only newline or ; allowed after label
         const next = this.scanner.peek();
         if (CharUtils.isNewline(next) || next === ';') {
-          // 終了ラベルの前に内容があれば、それを返す
+          // If there's content before end label, return it
           if (content.length > 0) {
             this.scanner.restore(savedState);
             return createToken(
@@ -415,7 +415,7 @@ export class Tokenizer {
             );
           }
 
-          // 終了ラベルを処理
+          // Process end label
           const endToken = createToken(
             TokenKind.EndHeredoc,
             label,
@@ -432,11 +432,11 @@ export class Tokenizer {
       const char = this.scanner.advance();
       content += char;
 
-      // 改行後は行頭
+      // After newline is line start
       lineStart = CharUtils.isNewline(char);
     }
 
-    // EOF に達した場合
+    // When reaching EOF
     if (content.length > 0) {
       const token = createToken(
         TokenKind.EncapsedAndWhitespace,
@@ -462,27 +462,27 @@ export class Tokenizer {
   private scanNumber(start: SourcePosition): Token {
     let text = '';
 
-    // 0x, 0b, 0o プレフィックスチェック
+    // Check for 0x, 0b, 0o prefixes
     if (this.scanner.peek() === '0') {
       const next = this.scanner.peek(1);
       if (next === 'x' || next === 'X') {
-        // 16進数
+        // Hexadecimal
         text = this.scanner.advance() + this.scanner.advance();
         text += this.scanDigits(char => CharUtils.isHexDigit(char) || char === '_');
       } else if (next === 'b' || next === 'B') {
-        // 2進数
+        // Binary
         text = this.scanner.advance() + this.scanner.advance();
         text += this.scanDigits(char => CharUtils.isBinaryDigit(char) || char === '_');
       } else if (next === 'o' || next === 'O') {
-        // 8進数（明示的）
+        // Octal (explicit)
         text = this.scanner.advance() + this.scanner.advance();
         text += this.scanDigits(char => CharUtils.isOctalDigit(char) || char === '_');
       } else if (CharUtils.isOctalDigit(next)) {
-        // 8進数（暗黙的）
+        // Octal (implicit)
         text = this.scanner.advance();
         text += this.scanDigits(char => CharUtils.isOctalDigit(char) || char === '_');
       } else {
-        // 通常の10進数
+        // Normal decimal
         text = this.scanDecimalNumber();
       }
     } else {
@@ -506,22 +506,22 @@ export class Tokenizer {
   private scanDecimalNumber(): string {
     let text = '';
     
-    // 小数点で始まる場合（.25など）
+    // When starting with decimal point (like .25)
     if (this.scanner.peek() === '.') {
       text += this.scanner.advance();
       text += this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
     } else {
-      // 整数部
+      // Integer part
       text = this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
       
-      // 小数部
+      // Decimal part
       if (this.scanner.peek() === '.' && CharUtils.isDigit(this.scanner.peek(1))) {
         text += this.scanner.advance();
         text += this.scanDigits(char => CharUtils.isDigit(char) || char === '_');
       }
     }
 
-    // 指数部
+    // Exponent part
     const exp = this.scanner.peek();
     if (exp === 'e' || exp === 'E') {
       const sign = this.scanner.peek(1);
@@ -559,13 +559,13 @@ export class Tokenizer {
   private scanVariable(start: SourcePosition): Token {
     let text = this.scanner.advance(); // $
 
-    // ${expr} 形式または$$ (variable variable)
+    // ${expr} format or $$ (variable variable)
     if (this.scanner.peek() === '{' || this.scanner.peek() === '$') {
-      // パーサーで処理
+      // Process in parser
       return this.makeToken(TokenKind.Dollar, text, start);
     }
 
-    // 通常の変数名
+    // Normal variable name
     text += this.scanner.consumeWhile(char => CharUtils.isIdentifierPart(char));
 
     return createToken(
@@ -586,13 +586,13 @@ export class Tokenizer {
   private scanIdentifierOrKeyword(start: SourcePosition): Token {
     const text = this.scanner.consumeWhile(char => CharUtils.isIdentifierPart(char));
 
-    // キーワードチェック
+    // Check for keywords
     const keywordKind = KEYWORDS.get(text.toLowerCase());
     if (keywordKind) {
       return this.makeToken(keywordKind, text, start);
     }
 
-    // 識別子
+    // Identifier
     return createToken(
       TokenKind.Identifier,
       text,
@@ -613,7 +613,7 @@ export class Tokenizer {
     const next = this.scanner.peek(1);
     const next2 = this.scanner.peek(2);
 
-    // 3文字演算子
+    // 3-character operators
     const three = char + next + next2;
     switch (three) {
       case '===':
@@ -642,7 +642,7 @@ export class Tokenizer {
         return this.makeToken(TokenKind.Ellipsis, three, start);
     }
 
-    // 2文字演算子
+    // 2-character operators
     const two = char + next;
     switch (two) {
       case '++':
@@ -718,7 +718,7 @@ export class Tokenizer {
         this.scanner.skip(2);
         return this.makeToken(TokenKind.StarStar, two, start);
       case '?>':
-        // PHP 終了タグ
+        // PHP closing tag
         this.scanner.skip(2);
         this.inPhpTag = false;
         return this.makeToken(TokenKind.CloseTag, two, start);
@@ -730,7 +730,7 @@ export class Tokenizer {
       return this.makeToken(TokenKind.QuestionArrow, '?->', start);
     }
 
-    // 1文字演算子・記号
+    // 1-character operators and punctuation
     this.scanner.advance();
     switch (char) {
       case '+': return this.makeToken(TokenKind.Plus, char, start);
@@ -807,7 +807,7 @@ export class Tokenizer {
   private makeToken(kind: TokenKind, text: string, start: SourcePosition): Token {
     const location = createLocation(start, this.scanner.getCurrentPosition());
     
-    // createToken関数を使用してトークンを作成
+    // Create token using createToken function
     return createToken(kind, text, location);
   }
 }

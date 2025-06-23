@@ -1,12 +1,12 @@
 /**
- * 文字列スキャナー
- * 効率的な文字単位の読み取りとバックトラック
+ * String Scanner
+ * Provides efficient character-by-character reading and backtracking
  */
 
 import { SourcePosition, createPosition } from '../core/location.js';
 
 /**
- * 文字列をスキャンするクラス
+ * Class for scanning strings
  */
 export class Scanner {
   private readonly source: string;
@@ -19,7 +19,7 @@ export class Scanner {
   }
 
   /**
-   * 現在の文字を取得（進めない）
+   * Get current character without advancing
    */
   peek(offset: number = 0): string {
     const pos = this.position + offset;
@@ -27,7 +27,7 @@ export class Scanner {
   }
 
   /**
-   * 現在の文字を取得して次に進む
+   * Get current character and advance to next
    */
   advance(): string {
     const char = this.peek();
@@ -44,7 +44,7 @@ export class Scanner {
   }
 
   /**
-   * 指定された文字数分進む
+   * Skip specified number of characters
    */
   skip(count: number = 1): void {
     for (let i = 0; i < count; i++) {
@@ -53,7 +53,7 @@ export class Scanner {
   }
 
   /**
-   * 文字列がマッチするかチェック（進めない）
+   * Check if string matches without advancing
    */
   matches(text: string): boolean {
     for (let i = 0; i < text.length; i++) {
@@ -65,7 +65,7 @@ export class Scanner {
   }
 
   /**
-   * 文字列を消費（マッチしたら進む）
+   * Consume string if it matches
    */
   consume(text: string): boolean {
     if (this.matches(text)) {
@@ -76,7 +76,7 @@ export class Scanner {
   }
 
   /**
-   * 正規表現にマッチする部分を消費
+   * Consume characters matching regex pattern
    */
   consumeRegex(pattern: RegExp): string | null {
     const remaining = this.source.slice(this.position);
@@ -92,7 +92,7 @@ export class Scanner {
   }
 
   /**
-   * 条件を満たす間、文字を消費
+   * Consume characters while predicate is true
    */
   consumeWhile(predicate: (char: string) => boolean): string {
     let result = '';
@@ -103,14 +103,14 @@ export class Scanner {
   }
 
   /**
-   * 条件を満たすまで文字を消費
+   * Consume characters until predicate is true
    */
   consumeUntil(predicate: (char: string) => boolean): string {
     return this.consumeWhile(char => !predicate(char));
   }
 
   /**
-   * 現在位置を保存
+   * Save current position
    */
   save(): ScannerState {
     return {
@@ -121,7 +121,7 @@ export class Scanner {
   }
 
   /**
-   * 保存した位置に戻る
+   * Restore to saved position
    */
   restore(state: ScannerState): void {
     this.position = state.position;
@@ -130,28 +130,28 @@ export class Scanner {
   }
 
   /**
-   * 現在の位置情報を取得
+   * Get current position information
    */
   getCurrentPosition(): SourcePosition {
     return createPosition(this.line, this.column, this.position);
   }
 
   /**
-   * ファイルの終端かチェック
+   * Check if at end of file
    */
   isAtEnd(): boolean {
     return this.position >= this.source.length;
   }
 
   /**
-   * 残りの文字列を取得
+   * Get remaining string
    */
   remaining(): string {
     return this.source.slice(this.position);
   }
 
   /**
-   * エラー用のコンテキストを取得
+   * Get context for error reporting
    */
   getContext(length: number = 20): string {
     const start = Math.max(0, this.position - length);
@@ -163,7 +163,7 @@ export class Scanner {
 }
 
 /**
- * スキャナーの状態
+ * Scanner state
  */
 interface ScannerState {
   position: number;
@@ -172,7 +172,7 @@ interface ScannerState {
 }
 
 /**
- * 文字判定ヘルパー
+ * Character utility helpers
  */
 export const CharUtils = {
   isAlpha(char: string): boolean {

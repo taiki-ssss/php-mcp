@@ -1,6 +1,6 @@
 /**
- * パーサー基底クラス
- * トークン管理とエラーハンドリング
+ * Parser base class
+ * Token management and error handling
  */
 
 import { Token, TokenKind } from '../core/token.js';
@@ -8,7 +8,7 @@ import * as AST from '../core/ast.js';
 import { SourceLocation, createLocation } from '../core/location.js';
 
 /**
- * パーサーエラー
+ * Parser error
  */
 export class ParseError extends Error {
   constructor(
@@ -22,19 +22,19 @@ export class ParseError extends Error {
 }
 
 /**
- * パーサーオプション
+ * Parser options
  */
 export interface ParserOptions {
-  /** PHP バージョン */
+  /** PHP version */
   phpVersion?: string;
-  /** エラーリカバリーを有効にするか */
+  /** Whether to enable error recovery */
   errorRecovery?: boolean;
-  /** 厳密モード */
+  /** Strict mode */
   strict?: boolean;
 }
 
 /**
- * パーサー基底クラス
+ * Parser base class
  */
 export abstract class ParserBase {
   protected tokens: Token[];
@@ -57,7 +57,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * 現在のトークンを取得
+   * Get current token
    */
   protected peek(): Token {
     if (this.current >= this.tokens.length) {
@@ -76,7 +76,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * 前のトークンを取得
+   * Get previous token
    */
   protected previous(): Token {
     if (this.current - 1 < 0 || this.current - 1 >= this.tokens.length) {
@@ -93,14 +93,14 @@ export abstract class ParserBase {
   }
 
   /**
-   * 終端に達しているか
+   * Check if at end
    */
   protected isAtEnd(): boolean {
     return this.current >= this.tokens.length || this.peek().kind === TokenKind.EOF;
   }
 
   /**
-   * トークンを進める
+   * Advance token
    */
   protected advance(): Token {
     if (!this.isAtEnd()) this.current++;
@@ -108,7 +108,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * トークンタイプをチェック
+   * Check token type
    */
   protected check(kind: TokenKind): boolean {
     if (this.isAtEnd()) return false;
@@ -116,7 +116,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * トークンがマッチしたら進める
+   * Advance if token matches
    */
   protected match(...kinds: TokenKind[]): boolean {
     for (const kind of kinds) {
@@ -129,7 +129,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * トークンを消費（エラーチェック付き）
+   * Consume token (with error check)
    */
   protected consume(kind: TokenKind, message: string): Token {
     if (this.check(kind)) return this.advance();
@@ -138,14 +138,14 @@ export abstract class ParserBase {
   }
 
   /**
-   * エラーを生成
+   * Generate error
    */
   protected error(token: Token, message: string): ParseError {
     return new ParseError(message, token.location, token);
   }
 
   /**
-   * 同期ポイントまでスキップ（エラーリカバリー）
+   * Skip to sync point (error recovery)
    */
   protected synchronize(): void {
     this.advance();
@@ -170,7 +170,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * 識別子をパース
+   * Parse identifier
    */
   protected parseIdentifier(): AST.Identifier {
     const token = this.consume(TokenKind.Identifier, "Expected identifier");
@@ -182,7 +182,7 @@ export abstract class ParserBase {
   }
 
   /**
-   * 変数をパース
+   * Parse variable
    */
   protected parseVariable(): AST.VariableExpression {
     const token = this.previous(); // Variable token was already consumed by match()
@@ -194,13 +194,13 @@ export abstract class ParserBase {
   }
 
   /**
-   * 名前式をパース
+   * Parse name expression
    */
   protected parseNameExpression(): AST.NameExpression {
     const start = this.peek().location.start;
     const parts: AST.Identifier[] = [];
 
-    // 絶対パス
+    // Absolute path
     const isAbsolute = this.match(TokenKind.Backslash);
 
     do {
