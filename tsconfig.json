@@ -2,9 +2,9 @@
   "compilerOptions": {
     "target": "ESNext",
     "esModuleInterop": true,
-    "moduleResolution": "nodenext",
+    "moduleResolution": "node",
     "strict": true,
-    "module": "NodeNext",
+    "module": "ESNext",
     "rootDir": "src",
     "outDir": "./dist",
     "resolveJsonModule": true,
@@ -14,9 +14,14 @@
       "@features/*": ["src/features/*"],
       "@entities/*": ["src/entities/*"],
       "@shared/*": ["src/shared/*"]
-    }
+    },
+    "skipLibCheck": true
   },
   "include": [
-    "src",
+    "src/**/*"
   ],
+  "exclude": [
+    "src/shared/lib/php-parser/tests/**/*",
+    "src/shared/lib/php-parser/stub/**/*"
+  ]
 }
