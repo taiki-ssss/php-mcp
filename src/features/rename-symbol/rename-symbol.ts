@@ -50,11 +50,11 @@ export async function renameSymbol(
 
     // Convert line parameter to number
     const targetLine = typeof line === 'string' 
-      ? findLineContaining(content, line)
+      ? parseInt(line, 10)
       : line;
 
-    if (!targetLine) {
-      return err(`Could not find line containing: "${line}"`);
+    if (!targetLine || isNaN(targetLine)) {
+      return err(`Invalid line number: "${line}"`);
     }
 
     // Find the symbol at the specified line
@@ -120,18 +120,6 @@ export async function renameSymbol(
   }
 }
 
-/**
- * Find line number containing a specific string
- */
-function findLineContaining(content: string, searchString: string): number | undefined {
-  const lines = content.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(searchString)) {
-      return i + 1; // Convert to 1-based line number
-    }
-  }
-  return undefined;
-}
 
 /**
  * Apply changes to file content
@@ -176,9 +164,9 @@ export function formatRenameResult(result: RenameSymbolResult): string {
   ];
 
   for (const file of result.changedFiles) {
-    lines.push(`=� ${file.path}`);
+    lines.push(`=> ${file.path}`);
     for (const change of file.changes) {
-      lines.push(`  Line ${change.line}: "${change.oldText}" � "${change.newText}"`);
+      lines.push(`  Line ${change.line}: "${change.oldText}" -> "${change.newText}"`);
     }
     lines.push('');
   }

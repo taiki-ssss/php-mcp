@@ -89,7 +89,7 @@ export function formatFindReferencesResult(result: FindReferencesResult): string
   ];
 
   for (const file of result.references) {
-    lines.push(`=Ä ${file.path} (${file.references.length} reference(s))`);
+    lines.push(`=> ${file.path} (${file.references.length} reference(s))`);
     for (const ref of file.references) {
       lines.push(`  Line ${ref.line}:${ref.column} - ${ref.context}`);
     }
