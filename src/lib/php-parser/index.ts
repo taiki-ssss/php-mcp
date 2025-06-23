@@ -33,13 +33,13 @@ export * from './analyzer/visitor.js';
 export * from './analyzer/transformer.js';
 
 // Utils exports
-export { Result, ok, err, isOk, isErr } from '../utils/result.js';
+export { Result, ok, err, isOk, isErr } from './utils/result.js';
 
 import { tokenize, type TokenizerOptions } from './lexer/tokenizer.js';
 import { parse, type ParserOptions } from './parser/parser.js';
 import type { Program } from './core/ast.js';
 import type { Token } from './core/token.js';
-import { Result, ok, err } from '../utils/result.js';
+import { Result, ok, err } from './utils/result.js';
 
 /**
  * PHP コードをトークン化
@@ -76,7 +76,7 @@ export function parsePhp(
   try {
     const tokens = tokenize(source, options);
     // Filter out whitespace and newline tokens before parsing
-    const nonWhitespaceTokens = tokens.filter(t => 
+    const nonWhitespaceTokens = tokens.filter(t =>
       t.kind !== 'Whitespace' && t.kind !== 'Newline'
     );
     const program = parse(nonWhitespaceTokens, options);
