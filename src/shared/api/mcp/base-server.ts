@@ -17,7 +17,7 @@ import {
  */
 export class BaseMcpServer {
   private server: Server;
-  private tools: Map<string, ToolDef> = new Map();
+  private tools: Map<string, ToolDef<any>> = new Map();
   private defaultRoot?: string;
   private toolsListHandlerRegistered = false;
   private toolsCallHandlerRegistered = false;
@@ -55,7 +55,7 @@ export class BaseMcpServer {
   /**
    * Register a single tool
    */
-  registerTool(tool: ToolDef): void {
+  registerTool<S extends z.ZodType>(tool: ToolDef<S>): void {
     this.tools.set(tool.name, tool);
     debug('Registered tool:', tool.name);
     
@@ -68,7 +68,7 @@ export class BaseMcpServer {
   /**
    * Register multiple tools at once
    */
-  registerTools(tools: ToolDef<z.ZodType>[]): void {
+  registerTools(tools: ToolDef<any>[]): void {
     tools.forEach(tool => this.registerTool(tool));
   }
 

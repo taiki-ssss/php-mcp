@@ -6,6 +6,9 @@ import { parsePhp } from '../../shared/lib/php-parser/index.js';
 import { isOk } from '../../shared/lib/php-parser/utils/result.js';
 import { debug } from '../../shared/api/mcp/utils.js';
 import { getPhpFiles } from '../../shared/lib/file-utils/index.js';
+import { walk, walkAsync, transform } from '../../shared/lib/php-parser/analyzer/walker.js';
+import * as AST from '../../shared/lib/php-parser/core/ast.js';
+import { generatePhpCode } from '../../shared/lib/php-parser/generator/index.js';
 
 /**
  * Move a PHP file and update references
@@ -75,7 +78,7 @@ export async function moveFile(
 }
 
 /**
- * Update references to the moved file in other PHP files
+ * Update references to the moved file in other PHP files using AST
  */
 async function updateFileReferences(
   oldAbsolutePath: string,
@@ -91,6 +94,12 @@ async function updateFileReferences(
   // Get all PHP files in the project
   const phpFiles = await getPhpFiles(root);
 
+  // First, update the moved file itself
+  if (oldNamespace && newNamespace && oldNamespace !== newNamespace) {
+    // This will be handled in the loop below
+  }
+
+  // Then update references in other files
   for (const filePath of phpFiles) {
     // Skip the moved file itself
     if (filePath === newAbsolutePath) {
@@ -100,81 +109,42 @@ async function updateFileReferences(
     try {
       const content = await fs.readFile(filePath, 'utf-8');
       const updates: UpdateInfo[] = [];
-      let updatedContent = content;
-
-      // Update namespace in the moved file
-      if (filePath === newAbsolutePath && oldNamespace && newNamespace) {
-        const namespaceRegex = new RegExp(
-          `^namespace\\s+${escapeRegExp(oldNamespace)}\\s*;`,
-          'gm'
-        );
-        const newNamespaceDecl = `namespace ${newNamespace};`;
-        
-        if (namespaceRegex.test(updatedContent)) {
-          updatedContent = updatedContent.replace(namespaceRegex, newNamespaceDecl);
-          updates.push({
-            type: 'namespace',
-            old: oldNamespace,
-            new: newNamespace,
-            line: findLineNumber(content, namespaceRegex),
-          });
-        }
+      
+      // Parse the PHP file
+      const parseResult = parsePhp(content);
+      if (!isOk(parseResult)) {
+        debug(`Error parsing ${filePath}:`, parseResult.error);
+        continue;
       }
 
-      // Update use statements
-      if (oldNamespace && newNamespace) {
-        const useRegex = new RegExp(
-          `^use\\s+${escapeRegExp(oldNamespace)}\\\\([^;]+);`,
-          'gm'
-        );
-        
-        let match;
-        while ((match = useRegex.exec(content)) !== null) {
-          const oldUse = `${oldNamespace}\\${match[1]}`;
-          const newUse = `${newNamespace}\\${match[1]}`;
-          const newUseStatement = `use ${newUse};`;
-          
-          updatedContent = updatedContent.replace(match[0], newUseStatement);
-          updates.push({
-            type: 'use',
-            old: oldUse,
-            new: newUse,
-            line: findLineNumber(content, match[0]),
-          });
+      let ast = parseResult.value;
+      let hasChanges = false;
+
+      // Update use statements if namespace changed
+      if (oldNamespace && newNamespace && oldNamespace !== newNamespace) {
+        const result = updateUseStatements(ast, oldNamespace, newNamespace, updates);
+        if (result.hasChanges) {
+          ast = result.ast;
+          hasChanges = true;
         }
       }
 
       // Update require/include statements
-      const requirePatterns = [
-        /require\s+['"]([^'"]+)['"]/g,
-        /require_once\s+['"]([^'"]+)['"]/g,
-        /include\s+['"]([^'"]+)['"]/g,
-        /include_once\s+['"]([^'"]+)['"]/g,
-      ];
-
-      for (const pattern of requirePatterns) {
-        let match;
-        while ((match = pattern.exec(content)) !== null) {
-          const requiredPath = match[1];
-          const absoluteRequiredPath = path.resolve(path.dirname(filePath), requiredPath);
-          
-          if (absoluteRequiredPath === oldAbsolutePath) {
-            const newRelativePath = path.relative(path.dirname(filePath), newAbsolutePath);
-            const newRequire = match[0].replace(requiredPath, newRelativePath);
-            
-            updatedContent = updatedContent.replace(match[0], newRequire);
-            updates.push({
-              type: match[0].includes('require') ? 'require' : 'include',
-              old: requiredPath,
-              new: newRelativePath,
-              line: findLineNumber(content, match[0]),
-            });
-          }
-        }
+      const requireResult = updateRequireStatements(
+        ast,
+        oldAbsolutePath,
+        newAbsolutePath,
+        filePath,
+        updates
+      );
+      if (requireResult.hasChanges) {
+        ast = requireResult.ast;
+        hasChanges = true;
       }
 
-      // Write updated content if there were changes
-      if (updates.length > 0) {
+      // Generate updated PHP code if there were changes
+      if (hasChanges) {
+        const updatedContent = generatePhpCode(ast);
         await fs.writeFile(filePath, updatedContent, 'utf-8');
         updatedFiles.push({
           filePath: path.relative(root, filePath),
@@ -187,6 +157,158 @@ async function updateFileReferences(
   }
 
   return updatedFiles;
+}
+
+/**
+ * Update namespace in the moved file itself
+ */
+async function updateMovedFileNamespace(
+  filePath: string,
+  oldNamespace: string,
+  newNamespace: string
+): Promise<void> {
+  const content = await fs.readFile(filePath, 'utf-8');
+  const parseResult = parsePhp(content);
+  if (!isOk(parseResult)) {
+    debug(`Error parsing moved file ${filePath}:`, parseResult.error);
+    return;
+  }
+
+  let ast = parseResult.value;
+  let hasChanges = false;
+
+  // Update namespace declaration
+  const transformedAst = transform(ast, (node) => {
+    if (node.type === 'NamespaceDeclaration') {
+      const nsDecl = node as AST.NamespaceDeclaration;
+      if (nsDecl.name && nsDecl.name.parts.join('\\') === oldNamespace) {
+        hasChanges = true;
+        return {
+          ...nsDecl,
+          name: {
+            ...nsDecl.name,
+            parts: newNamespace.split('\\'),
+          },
+        };
+      }
+    }
+    return node;
+  });
+  
+  if (transformedAst) {
+    ast = transformedAst;
+  }
+
+  if (hasChanges) {
+    const updatedContent = generatePhpCode(ast);
+    await fs.writeFile(filePath, updatedContent, 'utf-8');
+  }
+}
+
+/**
+ * Update use statements in a PHP file using AST
+ */
+function updateUseStatements(
+  ast: AST.PhpProgram,
+  oldNamespace: string,
+  newNamespace: string,
+  updates: UpdateInfo[]
+): { ast: AST.PhpProgram; hasChanges: boolean } {
+  let hasChanges = false;
+
+  const updatedAst = transform(ast, (node, context) => {
+    if (node.type === 'UseStatement') {
+      const useStmt = node as AST.UseStatement;
+      const updatedItems = useStmt.items.map((item) => {
+        const fullName = item.name.parts.join('\\');
+        
+        // Check if this use statement references the old namespace
+        if (fullName.startsWith(oldNamespace + '\\') || fullName === oldNamespace) {
+          hasChanges = true;
+          const updatedName = fullName.replace(
+            new RegExp(`^${escapeRegExp(oldNamespace)}`),
+            newNamespace
+          );
+          
+          updates.push({
+            type: 'use',
+            old: fullName,
+            new: updatedName,
+            line: item.location?.start.line || 0,
+          });
+
+          return {
+            ...item,
+            name: {
+              ...item.name,
+              parts: updatedName.split('\\'),
+            },
+          };
+        }
+        return item;
+      });
+
+      if (hasChanges) {
+        return {
+          ...useStmt,
+          items: updatedItems,
+        };
+      }
+    }
+    return node;
+  });
+
+  return { ast: updatedAst as AST.PhpProgram, hasChanges };
+}
+
+/**
+ * Update require/include statements in a PHP file using AST
+ */
+function updateRequireStatements(
+  ast: AST.PhpProgram,
+  oldAbsolutePath: string,
+  newAbsolutePath: string,
+  currentFilePath: string,
+  updates: UpdateInfo[]
+): { ast: AST.PhpProgram; hasChanges: boolean } {
+  let hasChanges = false;
+
+  const updatedAst = transform(ast, (node) => {
+    if (node.type === 'IncludeExpression' || node.type === 'RequireExpression') {
+      const includeExpr = node as AST.IncludeExpression | AST.RequireExpression;
+      
+      // Check if the argument is a string literal
+      if (includeExpr.argument.type === 'StringLiteral') {
+        const strLiteral = includeExpr.argument as AST.StringLiteral;
+        const requiredPath = strLiteral.value;
+        const absoluteRequiredPath = path.resolve(path.dirname(currentFilePath), requiredPath);
+        
+        if (absoluteRequiredPath === oldAbsolutePath) {
+          hasChanges = true;
+          const newRelativePath = path.relative(path.dirname(currentFilePath), newAbsolutePath);
+          
+          updates.push({
+            type: node.type === 'RequireExpression' ? 'require' : 'include',
+            old: requiredPath,
+            new: newRelativePath,
+            line: includeExpr.location?.start.line || 0,
+          });
+
+          return {
+            ...includeExpr,
+            argument: {
+              ...strLiteral,
+              value: newRelativePath,
+              raw: `'${newRelativePath}'`,
+            },
+          };
+        }
+      }
+    }
+    return node;
+  });
+
+  return { ast: updatedAst as AST.PhpProgram, hasChanges };
 }
 
 /**
