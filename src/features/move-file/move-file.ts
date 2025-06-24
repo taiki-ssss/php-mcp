@@ -1,6 +1,7 @@
 import { Result, ok, err } from 'neverthrow';
 import path from 'path';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import { MoveFileRequest, MoveFileResult, UpdatedFile, UpdateInfo } from './types.js';
 import { parsePhp } from '../../shared/lib/php-parser/index.js';
 import { isOk } from '../../shared/lib/php-parser/utils/result.js';
@@ -9,6 +10,50 @@ import { getPhpFiles } from '../../shared/lib/file-utils/index.js';
 import { walk, walkAsync, transform } from '../../shared/lib/php-parser/analyzer/walker.js';
 import * as AST from '../../shared/lib/php-parser/core/ast.js';
 import { generatePhpCode } from '../../shared/lib/php-parser/generator/index.js';
+
+/**
+ * Get the actual class name from a PHP file by parsing its AST
+ */
+async function getClassNameFromFile(filePath: string): Promise<string | null> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const parseResult = parsePhp(content);
+    if (!isOk(parseResult)) {
+      debug(`Error parsing file ${filePath}:`, parseResult.error);
+      return null;
+    }
+
+    let className: string | null = null;
+
+    // Walk through AST to find class declaration
+    walk(parseResult.value, (node) => {
+      if (node.type === 'ClassDeclaration') {
+        const classDecl = node as AST.ClassDeclaration;
+        if (classDecl.name) {
+          className = classDecl.name.name;
+          return 'stop'; // Stop walking once we find the first class
+        }
+      } else if (node.type === 'InterfaceDeclaration') {
+        const interfaceDecl = node as AST.InterfaceDeclaration;
+        if (interfaceDecl.name) {
+          className = interfaceDecl.name.name;
+          return 'stop';
+        }
+      } else if (node.type === 'TraitDeclaration') {
+        const traitDecl = node as AST.TraitDeclaration;
+        if (traitDecl.name) {
+          className = traitDecl.name.name;
+          return 'stop';
+        }
+      }
+    });
+
+    return className;
+  } catch (error) {
+    debug(`Error reading file ${filePath}:`, error);
+    return null;
+  }
+}
 
 /**
  * Move a PHP file and update references
@@ -90,13 +135,31 @@ async function updateFileReferences(
   // Get old and new namespace based on PSR-4 convention
   const oldNamespace = getNamespaceFromPath(oldAbsolutePath, root);
   const newNamespace = getNamespaceFromPath(newAbsolutePath, root);
+  
+  // Get the actual class name from the PHP file (file has already been moved)
+  const className = await getClassNameFromFile(newAbsolutePath);
+  
+  // If we couldn't get the class name from the file, skip updating references
+  if (!className) {
+    debug('Could not extract class name from file, skipping reference updates');
+    return updatedFiles;
+  }
+  
+  debug('Namespace mapping:', {
+    oldPath: oldAbsolutePath,
+    newPath: newAbsolutePath,
+    oldNamespace,
+    newNamespace,
+    className
+  });
 
   // Get all PHP files in the project
   const phpFiles = await getPhpFiles(root);
 
   // First, update the moved file itself
-  if (oldNamespace && newNamespace && oldNamespace !== newNamespace) {
-    // This will be handled in the loop below
+  // Always try to update namespace based on new path
+  if (newNamespace !== null) {
+    await updateMovedFileNamespace(newAbsolutePath, oldNamespace, newNamespace);
   }
 
   // Then update references in other files
@@ -121,8 +184,8 @@ async function updateFileReferences(
       let hasChanges = false;
 
       // Update use statements if namespace changed
-      if (oldNamespace && newNamespace && oldNamespace !== newNamespace) {
-        const result = updateUseStatements(ast, oldNamespace, newNamespace, updates);
+      if (oldNamespace !== newNamespace) {
+        const result = updateUseStatements(ast, oldNamespace, newNamespace, className!, updates);
         if (result.hasChanges) {
           ast = result.ast;
           hasChanges = true;
@@ -164,7 +227,7 @@ async function updateFileReferences(
  */
 async function updateMovedFileNamespace(
   filePath: string,
-  oldNamespace: string,
+  oldNamespace: string | null,
   newNamespace: string
 ): Promise<void> {
   const content = await fs.readFile(filePath, 'utf-8');
@@ -181,7 +244,16 @@ async function updateMovedFileNamespace(
   const transformedAst = transform(ast, (node) => {
     if (node.type === 'NamespaceDeclaration') {
       const nsDecl = node as AST.NamespaceDeclaration;
-      if (nsDecl.name && nsDecl.name.parts.join('\\') === oldNamespace) {
+      const currentNamespace = nsDecl.name ? nsDecl.name.parts.join('\\') : '';
+      
+      debug('Updating namespace:', {
+        current: currentNamespace,
+        expected: oldNamespace,
+        new: newNamespace
+      });
+      
+      // Update any namespace declaration in the file
+      if (nsDecl.name) {
         hasChanges = true;
         return {
           ...nsDecl,
@@ -202,6 +274,40 @@ async function updateMovedFileNamespace(
   if (hasChanges) {
     const updatedContent = generatePhpCode(ast);
     await fs.writeFile(filePath, updatedContent, 'utf-8');
+    debug('Updated namespace in moved file');
+  } else {
+    // No namespace found, check if we need to add one
+    let needsNamespace = false;
+    walk(ast, (node) => {
+      if (node.type === 'ClassDeclaration' || 
+          node.type === 'InterfaceDeclaration' || 
+          node.type === 'TraitDeclaration' ||
+          node.type === 'FunctionDeclaration') {
+        needsNamespace = true;
+        return 'stop';
+      }
+    });
+    
+    if (needsNamespace) {
+      // Add namespace declaration at the beginning
+      const namespaceDecl: AST.NamespaceDeclaration = {
+        type: 'NamespaceDeclaration',
+        name: {
+          type: 'NameExpression',
+          parts: newNamespace.split('\\'),
+          qualified: 'unqualified'
+        },
+        statements: ast.statements
+      };
+      
+      const newAst: AST.PhpProgram = {
+        ...ast,
+        statements: [namespaceDecl]
+      };
+      const updatedContent = generatePhpCode(newAst);
+      await fs.writeFile(filePath, updatedContent, 'utf-8');
+      debug('Added namespace to moved file');
+    }
   }
 }
 
@@ -210,8 +316,9 @@ async function updateMovedFileNamespace(
  */
 function updateUseStatements(
   ast: AST.PhpProgram,
-  oldNamespace: string,
-  newNamespace: string,
+  oldNamespace: string | null,
+  newNamespace: string | null,
+  className: string,
   updates: UpdateInfo[]
 ): { ast: AST.PhpProgram; hasChanges: boolean } {
   let hasChanges = false;
@@ -219,21 +326,24 @@ function updateUseStatements(
   const updatedAst = transform(ast, (node, context) => {
     if (node.type === 'UseStatement') {
       const useStmt = node as AST.UseStatement;
+      let statementHasChanges = false;
+      
       const updatedItems = useStmt.items.map((item) => {
         const fullName = item.name.parts.join('\\');
         
-        // Check if this use statement references the old namespace
-        if (fullName.startsWith(oldNamespace + '\\') || fullName === oldNamespace) {
+        // Build the full qualified class name
+        const oldFullName = oldNamespace ? `${oldNamespace}\\${className}` : className;
+        const newFullName = newNamespace ? `${newNamespace}\\${className}` : className;
+        
+        // Check if this use statement references the specific class that was moved
+        if (fullName === oldFullName) {
+          statementHasChanges = true;
           hasChanges = true;
-          const updatedName = fullName.replace(
-            new RegExp(`^${escapeRegExp(oldNamespace)}`),
-            newNamespace
-          );
           
           updates.push({
             type: 'use',
             old: fullName,
-            new: updatedName,
+            new: newFullName,
             line: item.location?.start.line || 0,
           });
 
@@ -241,14 +351,14 @@ function updateUseStatements(
             ...item,
             name: {
               ...item.name,
-              parts: updatedName.split('\\'),
+              parts: newFullName.split('\\'),
             },
           };
         }
         return item;
       });
 
-      if (hasChanges) {
+      if (statementHasChanges) {
         return {
           ...useStmt,
           items: updatedItems,
@@ -312,31 +422,104 @@ function updateRequireStatements(
 }
 
 /**
- * Get namespace from file path based on PSR-4 convention
+ * Get namespace from file path based on composer.json PSR-4 configuration
  */
 function getNamespaceFromPath(filePath: string, root: string): string | null {
-  // Look for common PSR-4 root directories
-  const psr4Roots = ['src', 'lib', 'app'];
   const relativePath = path.relative(root, filePath);
   const parts = relativePath.split(path.sep);
 
-  let namespaceStart = 0;
-  for (let i = 0; i < parts.length; i++) {
-    if (psr4Roots.includes(parts[i])) {
-      namespaceStart = i + 1;
-      break;
-    }
-  }
+  debug('getNamespaceFromPath:', {
+    filePath,
+    root,
+    relativePath,
+    parts
+  });
 
-  if (namespaceStart === 0 || namespaceStart >= parts.length - 1) {
-    // No PSR-4 root found or it's the file itself
+  // If file is in root directory, no namespace
+  if (parts.length <= 1) {
     return null;
   }
 
+  // Try to read composer.json for PSR-4 configuration
+  const psr4Config = getPsr4Config(root);
+  
   // Build namespace from path parts (excluding the filename)
-  const namespaceParts = parts.slice(namespaceStart, -1);
-  return namespaceParts.join('\\\\');
+  const pathParts = parts.slice(0, -1);
+  
+  if (psr4Config) {
+    // Check PSR-4 mappings
+    for (const [namespace, directories] of Object.entries(psr4Config)) {
+      for (const dir of directories) {
+        // Normalize directory path (remove trailing slash)
+        const normalizedDir = dir.replace(/\/$/, '');
+        
+        // Check if file path starts with this PSR-4 directory
+        if (pathParts[0] === normalizedDir || relativePath.startsWith(normalizedDir + path.sep)) {
+          // Calculate namespace based on PSR-4 mapping
+          const baseParts = normalizedDir.split('/');
+          const remainingParts = pathParts.slice(baseParts.length);
+          
+          if (remainingParts.length > 0) {
+            return namespace + '\\' + remainingParts.join('\\');
+          }
+          return namespace;
+        }
+      }
+    }
+  }
+  
+  // Fallback: use directory structure as namespace
+  // First part gets capitalized
+  const firstPart = pathParts[0];
+  const capitalizedFirst = firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
+  
+  // Build namespace parts
+  const namespaceParts = [capitalizedFirst, ...pathParts.slice(1)];
+  const namespace = namespaceParts.join('\\');
+  
+  debug('Computed namespace:', namespace);
+  
+  return namespace || null;
 }
+
+/**
+ * Get PSR-4 configuration from composer.json
+ */
+function getPsr4Config(root: string): Record<string, string[]> | null {
+  try {
+    const composerPath = path.join(root, 'composer.json');
+    if (!fsSync.existsSync(composerPath)) {
+      return null;
+    }
+    
+    const composerContent = fsSync.readFileSync(composerPath, 'utf-8');
+    const composer = JSON.parse(composerContent);
+    
+    // Combine autoload and autoload-dev PSR-4 configurations
+    const psr4 = {
+      ...(composer.autoload?.['psr-4'] || {}),
+      ...(composer['autoload-dev']?.['psr-4'] || {})
+    };
+    
+    // Convert to a more usable format
+    const config: Record<string, string[]> = {};
+    for (const [namespace, paths] of Object.entries(psr4)) {
+      // Remove trailing backslash from namespace
+      const cleanNamespace = namespace.replace(/\\+$/, '');
+      // Ensure paths is an array
+      const pathArray = Array.isArray(paths) ? paths : [paths];
+      config[cleanNamespace] = pathArray as string[];
+    }
+    
+    debug('PSR-4 config:', config);
+    
+    return config;
+  } catch (error) {
+    debug('Error reading composer.json:', error);
+    return null;
+  }
+}
+
 
 /**
  * Escape special regex characters
