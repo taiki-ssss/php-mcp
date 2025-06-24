@@ -100,6 +100,59 @@ Move a PHP file and automatically update all references to it (namespaces, use s
 }
 ```
 
+### 5. `php_find_unused`
+
+Find unused variables, functions, classes, methods, properties, constants, and imports in PHP code.
+
+**Parameters:**
+- `root` (string, optional): Root directory to search (default: current directory)
+- `types` (string | array, optional): Types to detect - "all" or array of specific types (default: "all")
+  - Available types: `variables`, `functions`, `classes`, `methods`, `properties`, `constants`, `imports`
+- `includePrivate` (boolean, optional): Include private methods/properties (default: false)
+- `includeProtected` (boolean, optional): Include protected methods/properties (default: false)
+- `excludePatterns` (array, optional): File/directory patterns to exclude (default: ["vendor/**", "node_modules/**", ".git/**"])
+- `entryPoints` (array, optional): Entry point file patterns (e.g., ["index.php", "public/*.php"])
+
+**Returns:**
+- List of unused symbols with their locations
+- Summary by type (count of unused items per category)
+- Additional notes for special cases (magic methods, naming conventions, etc.)
+
+**Example:**
+```json
+{
+  "types": "all",
+  "includePrivate": true,
+  "includeProtected": true,
+  "excludePatterns": ["vendor/**", "tests/**"]
+}
+```
+
+**Output Example:**
+```
+Found 5 unused symbols in 10 files
+
+Summary by type:
+  variables: 2
+  functions: 1
+  methods: 2
+
+Unused symbols:
+
+Variables:
+  $unusedVar
+     src/Controller.php:45:5
+
+Functions:
+  unusedFunction
+     src/Utils.php:120:1
+
+Methods:
+  __construct (private)
+     src/Model/User.php:15:5
+     Note: Possibly a magic method
+```
+
 ## Features
 
 - **Full PHP Parser**: Complete PHP parser that generates type-safe ASTs
@@ -107,6 +160,8 @@ Move a PHP file and automatically update all references to it (namespaces, use s
 - **PSR-4 Support**: Automatic namespace handling following PHP standards
 - **Project-wide Refactoring**: Analyze and update multiple files across the entire project
 - **Error Recovery**: Parser continues processing even when encountering syntax errors
+- **Unused Code Detection**: Find unused variables, functions, classes, methods, and more with confidence levels
+- **Pattern-based Exclusion**: Flexible file/directory exclusion patterns for vendor directories and tests
 
 ## Installation
 
@@ -136,6 +191,8 @@ The PHP MCP server is designed to be used by AI assistants for performing code a
 - Find all usages of a particular symbol
 - Analyze file structure and extract symbol information
 - Move files while maintaining code integrity
+- Detect unused code elements to improve code quality
+- Clean up unused imports and dead code
 
 ## Requirements
 

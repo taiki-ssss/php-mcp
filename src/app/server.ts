@@ -5,6 +5,7 @@ import { renameSymbolTool } from '../features/rename-symbol/index.js';
 import { findReferencesTool } from '../features/find-references/index.js';
 import { getSymbolsTool } from '../features/get-symbols/index.js';
 import { moveFileTool } from '../features/move-file/index.js';
+import { findUnusedTool } from '../features/find-unused/index.js';
 
 /**
  * Main server entry point
@@ -32,6 +33,7 @@ async function main() {
       findReferencesTool,
       getSymbolsTool,
       moveFileTool,
+      findUnusedTool,
     ];
 
     server.registerTools(tools);
