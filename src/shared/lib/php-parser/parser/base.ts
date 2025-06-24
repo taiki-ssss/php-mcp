@@ -6,6 +6,7 @@
 import { Token, TokenKind } from '../core/token.js';
 import * as AST from '../core/ast.js';
 import { SourceLocation, createLocation } from '../core/location.js';
+import { DEFAULTS, SPECIAL_CHARS } from '../constants.js';
 
 /**
  * Parser error
@@ -38,7 +39,7 @@ export interface ParserOptions {
  */
 export abstract class ParserBase {
   protected tokens: Token[];
-  protected current = 0;
+  protected current = DEFAULTS.ARRAY_INDEX;
   protected options: Required<ParserOptions>;
 
   constructor(tokens: Token[], options: ParserOptions = {}) {
@@ -50,7 +51,7 @@ export abstract class ParserBase {
       t.kind !== TokenKind.DocComment
     );
     this.options = {
-      phpVersion: options.phpVersion ?? '8.0',
+      phpVersion: options.phpVersion ?? DEFAULTS.PHP_VERSION,
       errorRecovery: options.errorRecovery ?? true,
       strict: options.strict ?? false
     };

@@ -16,32 +16,32 @@ export type WalkResult<T = void> = T | undefined | 'skip' | 'stop';
 /**
  * Walker function type
  */
-export type WalkerFunction<T = void> = (
+export type WalkerFunction<T = void, TContext = unknown> = (
   node: AST.Node,
-  context: WalkContext
+  context: WalkContext<TContext>
 ) => WalkResult<T>;
 
 /**
  * Walk context interface
  */
-export interface WalkContext {
+export interface WalkContext<TContext = unknown> {
   /** Stack of parent nodes */
   readonly parents: AST.Node[];
   /** Current depth in the tree */
   readonly depth: number;
   /** User-defined context data */
-  readonly userContext?: any;
+  readonly userContext?: TContext;
 }
 
 /**
  * Walks through AST nodes
  */
-export function walk<T = void>(
+export function walk<T = void, TContext = unknown>(
   node: AST.Node | AST.Node[],
-  walker: WalkerFunction<T>,
-  userContext?: any
+  walker: WalkerFunction<T, TContext>,
+  userContext?: TContext
 ): T | undefined {
-  const context: WalkContext = {
+  const context: WalkContext<TContext> = {
     parents: [],
     depth: 0,
     userContext
@@ -78,10 +78,10 @@ export function walk<T = void>(
  * @param context - Walk context
  * @returns Walk result (value, 'skip', 'stop', or undefined)
  */
-function walkNode<T>(
+function walkNode<T, TContext = unknown>(
   node: AST.Node,
-  walker: WalkerFunction<T>,
-  context: WalkContext
+  walker: WalkerFunction<T, TContext>,
+  context: WalkContext<TContext>
 ): WalkResult<T> {
   // Call walker function
   const result = walker(node, context);
@@ -97,7 +97,7 @@ function walkNode<T>(
   }
 
   // Walk child nodes
-  const newContext: WalkContext = {
+  const newContext: WalkContext<TContext> = {
     parents: [...context.parents, node],
     depth: context.depth + 1,
     userContext: context.userContext
@@ -120,10 +120,10 @@ function walkNode<T>(
  * @param context - Walk context
  * @returns Walk result from children
  */
-function walkChildren<T>(
+function walkChildren<T, TContext = unknown>(
   node: AST.Node,
-  walker: WalkerFunction<T>,
-  context: WalkContext
+  walker: WalkerFunction<T, TContext>,
+  context: WalkContext<TContext>
 ): WalkResult<T> {
   switch (node.type) {
     // Program
@@ -339,10 +339,10 @@ function walkChildren<T>(
  * @param context - Walk context
  * @returns Walk result from array
  */
-function walkArray<T>(
+function walkArray<T, TContext = unknown>(
   nodes: AST.Node[],
-  walker: WalkerFunction<T>,
-  context: WalkContext
+  walker: WalkerFunction<T, TContext>,
+  context: WalkContext<TContext>
 ): WalkResult<T> {
   for (const node of nodes) {
     const result = walkNode(node, walker, context);
@@ -363,10 +363,10 @@ function walkArray<T>(
  * @param context - Walk context
  * @returns Walk result from generic traversal
  */
-function walkGenericChildren<T>(
+function walkGenericChildren<T, TContext = unknown>(
   node: AST.Node,
-  walker: WalkerFunction<T>,
-  context: WalkContext
+  walker: WalkerFunction<T, TContext>,
+  context: WalkContext<TContext>
 ): WalkResult<T> {
   for (const key in node) {
     const value = (node as any)[key];
@@ -529,12 +529,12 @@ export const is = {
 /**
  * Walks through AST nodes asynchronously
  */
-export async function walkAsync<T = void>(
+export async function walkAsync<T = void, TContext = unknown>(
   node: AST.Node | AST.Node[],
-  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
-  userContext?: any
+  walker: (node: AST.Node, context: WalkContext<TContext>) => Promise<WalkResult<T>> | WalkResult<T>,
+  userContext?: TContext
 ): Promise<T | undefined> {
-  const context: WalkContext = {
+  const context: WalkContext<TContext> = {
     parents: [],
     depth: 0,
     userContext
@@ -566,10 +566,10 @@ export async function walkAsync<T = void>(
  * @param context - Walk context
  * @returns Promise resolving to walk result
  */
-async function walkNodeAsync<T>(
+async function walkNodeAsync<T, TContext = unknown>(
   node: AST.Node,
-  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
-  context: WalkContext
+  walker: (node: AST.Node, context: WalkContext<TContext>) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext<TContext>
 ): Promise<WalkResult<T>> {
   // Call walker function
   const result = await walker(node, context);
@@ -585,7 +585,7 @@ async function walkNodeAsync<T>(
   }
 
   // Walk child nodes
-  const newContext: WalkContext = {
+  const newContext: WalkContext<TContext> = {
     parents: [...context.parents, node],
     depth: context.depth + 1,
     userContext: context.userContext
@@ -608,10 +608,10 @@ async function walkNodeAsync<T>(
  * @param context - Walk context
  * @returns Promise resolving to walk result
  */
-async function walkChildrenAsync<T>(
+async function walkChildrenAsync<T, TContext = unknown>(
   node: AST.Node,
-  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
-  context: WalkContext
+  walker: (node: AST.Node, context: WalkContext<TContext>) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext<TContext>
 ): Promise<WalkResult<T>> {
   switch (node.type) {
     // Program
@@ -826,10 +826,10 @@ async function walkChildrenAsync<T>(
  * @param context - Walk context
  * @returns Promise resolving to walk result
  */
-async function walkGenericChildrenAsync<T>(
+async function walkGenericChildrenAsync<T, TContext = unknown>(
   node: AST.Node,
-  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
-  context: WalkContext
+  walker: (node: AST.Node, context: WalkContext<TContext>) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext<TContext>
 ): Promise<WalkResult<T>> {
   for (const key in node) {
     const value = (node as any)[key];
@@ -865,10 +865,10 @@ async function walkGenericChildrenAsync<T>(
  * @param context - Walk context
  * @returns Promise resolving to walk result
  */
-async function walkArrayAsync<T>(
+async function walkArrayAsync<T, TContext = unknown>(
   nodes: AST.Node[],
-  walker: (node: AST.Node, context: WalkContext) => Promise<WalkResult<T>> | WalkResult<T>,
-  context: WalkContext
+  walker: (node: AST.Node, context: WalkContext<TContext>) => Promise<WalkResult<T>> | WalkResult<T>,
+  context: WalkContext<TContext>
 ): Promise<WalkResult<T>> {
   for (const node of nodes) {
     const result = await walkNodeAsync(node, walker, context);

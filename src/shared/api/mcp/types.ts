@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 /**
  * MCP Tool Definition Interface
@@ -35,3 +36,19 @@ export interface McpServerOptions {
     prompts?: {};
   };
 }
+
+/**
+ * Type-safe JSON Schema representation
+ */
+export interface JSONSchema {
+  type?: 'object' | 'string' | 'number' | 'boolean' | 'array';
+  properties?: Record<string, JSONSchema>;
+  required?: string[];
+  oneOf?: JSONSchema[];
+  items?: JSONSchema;
+}
+
+/**
+ * Re-export Transport type for convenience
+ */
+export type { Transport };

@@ -45,71 +45,24 @@ export class DeclarationParser extends StatementParser {
    * @throws ParseError if invalid syntax is encountered
    */
   parseDeclaration(): AST.Statement | null {
-    while (this.peek().kind === TokenKind.Whitespace || 
-           this.peek().kind === TokenKind.Newline ||
-           this.peek().kind === TokenKind.Comment ||
-           this.peek().kind === TokenKind.DocComment) {
-      this.advance();
-    }
+    this.skipWhitespaceAndComments();
     
     // Check for class modifiers (abstract, final, readonly)
-    if (this.check(TokenKind.Abstract) || this.check(TokenKind.Final) || this.check(TokenKind.Readonly)) {
-      const savedPos = this.current;
-      const modifiers: string[] = [];
-      
-      // Collect all modifiers
-      while (this.check(TokenKind.Abstract) || this.check(TokenKind.Final) || this.check(TokenKind.Readonly)) {
-        modifiers.push(this.advance().text.toLowerCase());
-      }
-      
-      // If followed by 'class', it's a class declaration with modifiers
-      if (this.check(TokenKind.Class)) {
-        this.advance(); // consume 'class'
-        return this.parseClassDeclaration(modifiers);
-      }
-      
-      // Otherwise, restore position and treat as statement
-      this.current = savedPos;
-      return this.parseStatement();
+    const modifierResult = this.tryParseClassWithModifiers();
+    if (modifierResult !== null) {
+      return modifierResult;
     }
 
-    if (this.check(TokenKind.Function)) {
-      // Check if this is a function declaration or an anonymous function
-      const savedPos = this.current;
-      this.advance(); // consume 'function'
-      
-      // If followed by '(' it's an anonymous function expression
-      if (this.check(TokenKind.LeftParen)) {
-        this.current = savedPos; // restore position
-        return this.parseStatement();
-      }
-      
-      // Otherwise, it's a function declaration
-      return this.parseFunctionDeclaration();
+    // Try to parse function declaration
+    const functionResult = this.tryParseFunctionDeclaration();
+    if (functionResult !== null) {
+      return functionResult;
     }
 
-    if (this.check(TokenKind.Class)) {
-      // Check if this is a class declaration or an expression like Class::method()
-      const savedPos = this.current;
-      this.advance(); // consume 'class'
-      
-      // If followed by an identifier, it's a class declaration
-      if (this.check(TokenKind.Identifier)) {
-        this.current = savedPos; // restore position
-        this.advance(); // consume 'class' again
-        return this.parseClassDeclaration();
-      }
-      
-      // If followed by '{' or other declaration-specific tokens, it's an incomplete class declaration
-      if (this.check(TokenKind.LeftBrace) || this.check(TokenKind.Extends) || 
-          this.check(TokenKind.Implements) || this.check(TokenKind.CloseTag) ||
-          this.check(TokenKind.Semicolon) || this.isAtEnd()) {
-        throw this.error(this.peek(), "Expected class name after 'class'");
-      }
-      
-      // Otherwise, treat it as an expression (e.g., Class::method())
-      this.current = savedPos; // restore position
-      return this.parseStatement();
+    // Try to parse class declaration
+    const classResult = this.tryParseClassDeclaration();
+    if (classResult !== null) {
+      return classResult;
     }
 
     if (this.match(TokenKind.Interface)) {
@@ -136,6 +89,101 @@ export class DeclarationParser extends StatementParser {
       return this.parseConstStatement();
     }
 
+    return this.parseStatement();
+  }
+
+  /**
+   * Skip whitespace, newlines, and comments
+   */
+  private skipWhitespaceAndComments(): void {
+    while (this.peek().kind === TokenKind.Whitespace || 
+           this.peek().kind === TokenKind.Newline ||
+           this.peek().kind === TokenKind.Comment ||
+           this.peek().kind === TokenKind.DocComment) {
+      this.advance();
+    }
+  }
+
+  /**
+   * Try to parse a class declaration with modifiers
+   * @returns The parsed class declaration or null if not a modified class
+   */
+  private tryParseClassWithModifiers(): AST.Statement | null {
+    if (!this.check(TokenKind.Abstract) && !this.check(TokenKind.Final) && !this.check(TokenKind.Readonly)) {
+      return null;
+    }
+
+    const savedPos = this.current;
+    const modifiers: string[] = [];
+    
+    // Collect all modifiers
+    while (this.check(TokenKind.Abstract) || this.check(TokenKind.Final) || this.check(TokenKind.Readonly)) {
+      modifiers.push(this.advance().text.toLowerCase());
+    }
+    
+    // If followed by 'class', it's a class declaration with modifiers
+    if (this.check(TokenKind.Class)) {
+      this.advance(); // consume 'class'
+      return this.parseClassDeclaration(modifiers);
+    }
+    
+    // Otherwise, restore position and treat as statement
+    this.current = savedPos;
+    return this.parseStatement();
+  }
+
+  /**
+   * Try to parse a function declaration
+   * @returns The parsed function declaration or null if not a function
+   */
+  private tryParseFunctionDeclaration(): AST.Statement | null {
+    if (!this.check(TokenKind.Function)) {
+      return null;
+    }
+
+    // Check if this is a function declaration or an anonymous function
+    const savedPos = this.current;
+    this.advance(); // consume 'function'
+    
+    // If followed by '(' it's an anonymous function expression
+    if (this.check(TokenKind.LeftParen)) {
+      this.current = savedPos; // restore position
+      return this.parseStatement();
+    }
+    
+    // Otherwise, it's a function declaration
+    return this.parseFunctionDeclaration();
+  }
+
+  /**
+   * Try to parse a class declaration
+   * @returns The parsed class declaration or null if not a class
+   */
+  private tryParseClassDeclaration(): AST.Statement | null {
+    if (!this.check(TokenKind.Class)) {
+      return null;
+    }
+
+    // Check if this is a class declaration or an expression like Class::method()
+    const savedPos = this.current;
+    this.advance(); // consume 'class'
+    
+    // If followed by an identifier, it's a class declaration
+    if (this.check(TokenKind.Identifier)) {
+      this.current = savedPos; // restore position
+      this.advance(); // consume 'class' again
+      return this.parseClassDeclaration();
+    }
+    
+    // If followed by '{' or other declaration-specific tokens, it's an incomplete class declaration
+    if (this.check(TokenKind.LeftBrace) || this.check(TokenKind.Extends) || 
+        this.check(TokenKind.Implements) || this.check(TokenKind.CloseTag) ||
+        this.check(TokenKind.Semicolon) || this.isAtEnd()) {
+      throw this.error(this.peek(), "Expected class name after 'class'");
+    }
+    
+    // Otherwise, treat it as an expression (e.g., Class::method())
+    this.current = savedPos; // restore position
     return this.parseStatement();
   }
 
@@ -480,13 +528,8 @@ export class DeclarationParser extends StatementParser {
     const start = this.previous().location.start;
     const items: AST.UseItem[] = [];
 
-    // use function/const
-    let kind: 'normal' | 'function' | 'const' = 'normal';
-    if (this.match(TokenKind.Function)) {
-      kind = 'function';
-    } else if (this.match(TokenKind.Const)) {
-      kind = 'const';
-    }
+    // Determine use statement kind (normal, function, const)
+    const kind = this.parseUseKind();
 
     // Check for grouped use syntax: use Foo\{Bar, Baz}
     const baseNameParts: string[] = [];
@@ -507,49 +550,54 @@ export class DeclarationParser extends StatementParser {
     // Check if this is grouped use
     if (this.match(TokenKind.LeftBrace)) {
       isGrouped = true;
-      
-      do {
-        // Check for function/const inside group
-        let itemKind = kind;
-        if (this.match(TokenKind.Function)) {
-          itemKind = 'function';
-        } else if (this.match(TokenKind.Const)) {
-          itemKind = 'const';
-        }
-
-        // Parse the item name
-        const itemNameParts = [...baseNameParts];
-        while (this.check(TokenKind.Identifier)) {
-          itemNameParts.push(this.advance().text);
-          if (this.check(TokenKind.Backslash)) {
-            this.advance();
-          }
-        }
-
-        let alias: AST.Identifier | undefined;
-        if (this.match(TokenKind.As)) {
-          alias = this.parseIdentifier();
-        }
-
-        const nameLocation = this.previous().location;
-        items.push({
-          type: 'UseItem',
-          name: {
-            type: 'NameExpression',
-            parts: itemNameParts,
-            location: nameLocation
-          },
-          alias,
-          kind: itemKind,
-          location: mergeLocations(nameLocation, alias?.location || nameLocation)
-        });
-      } while (this.match(TokenKind.Comma));
-
-      this.consume(TokenKind.RightBrace, "Expected '}' after grouped use items");
+      this.parseGroupedUseItems(items, baseNameParts, kind);
     } else {
-      // Non-grouped use - restore the parsed name
-      if (baseNameParts.length === 0) {
-        baseNameParts.push(...this.parseNameExpression().parts);
+      // Non-grouped use
+      this.parseNonGroupedUseItems(items, baseNameParts, kind);
+    }
+
+    const end = this.consume(TokenKind.Semicolon, "Expected ';' after use statement").location.end;
+
+    return {
+      type: 'UseStatement',
+      items,
+      kind,
+      location: createLocation(start, end)
+    };
+  }
+
+  /**
+   * Parse the kind of use statement (normal, function, or const)
+   */
+  private parseUseKind(): 'normal' | 'function' | 'const' {
+    if (this.match(TokenKind.Function)) {
+      return 'function';
+    } else if (this.match(TokenKind.Const)) {
+      return 'const';
+    }
+    return 'normal';
+  }
+
+  /**
+   * Parse grouped use items (e.g., use Foo\{Bar, Baz})
+   */
+  private parseGroupedUseItems(items: AST.UseItem[], baseNameParts: string[], defaultKind: 'normal' | 'function' | 'const'): void {
+    do {
+      // Check for function/const inside group
+      let itemKind = defaultKind;
+      if (this.match(TokenKind.Function)) {
+        itemKind = 'function';
+      } else if (this.match(TokenKind.Const)) {
+        itemKind = 'const';
+      }
+
+      // Parse the item name
+      const itemNameParts = [...baseNameParts];
+      while (this.check(TokenKind.Identifier)) {
+        itemNameParts.push(this.advance().text);
+        if (this.check(TokenKind.Backslash)) {
+          this.advance();
+        }
       }
 
       let alias: AST.Identifier | undefined;
@@ -562,39 +610,62 @@ export class DeclarationParser extends StatementParser {
         type: 'UseItem',
         name: {
           type: 'NameExpression',
-          parts: baseNameParts,
+          parts: itemNameParts,
           location: nameLocation
         },
         alias,
+        kind: itemKind,
         location: mergeLocations(nameLocation, alias?.location || nameLocation)
       });
+    } while (this.match(TokenKind.Comma));
 
-      // Handle multiple non-grouped use items
-      while (this.match(TokenKind.Comma)) {
-        const name = this.parseNameExpression();
-        let alias: AST.Identifier | undefined;
+    this.consume(TokenKind.RightBrace, "Expected '}' after grouped use items");
+  }
 
-        if (this.match(TokenKind.As)) {
-          alias = this.parseIdentifier();
-        }
-
-        items.push({
-          type: 'UseItem',
-          name,
-          alias,
-          location: mergeLocations(name.location!, alias?.location || name.location!)
-        });
-      }
+  /**
+   * Parse non-grouped use items
+   */
+  private parseNonGroupedUseItems(items: AST.UseItem[], baseNameParts: string[], kind: 'normal' | 'function' | 'const'): void {
+    // Restore the parsed name if needed
+    if (baseNameParts.length === 0) {
+      baseNameParts.push(...this.parseNameExpression().parts);
     }
 
-    const end = this.consume(TokenKind.Semicolon, "Expected ';' after use statement").location.end;
+    let alias: AST.Identifier | undefined;
+    if (this.match(TokenKind.As)) {
+      alias = this.parseIdentifier();
+    }
 
-    return {
-      type: 'UseStatement',
-      items,
+    const nameLocation = this.previous().location;
+    items.push({
+      type: 'UseItem',
+      name: {
+        type: 'NameExpression',
+        parts: baseNameParts,
+        location: nameLocation
+      },
+      alias,
       kind,
-      location: createLocation(start, end)
-    };
+      location: mergeLocations(nameLocation, alias?.location || nameLocation)
+    });
+
+    // Handle multiple non-grouped use items
+    while (this.match(TokenKind.Comma)) {
+      const name = this.parseNameExpression();
+      let alias: AST.Identifier | undefined;
+
+      if (this.match(TokenKind.As)) {
+        alias = this.parseIdentifier();
+      }
+
+      items.push({
+        type: 'UseItem',
+        name,
+        alias,
+        kind,
+        location: mergeLocations(name.location!, alias?.location || name.location!)
+      });
+    }
   }
 
   /**

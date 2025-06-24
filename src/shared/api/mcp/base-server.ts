@@ -1,6 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
-import { ToolDef, McpServerOptions, ToolResult } from './types.js';
+import { ToolDef, McpServerOptions, Transport, JSONSchema } from './types.js';
 import { debug, toMcpToolHandler } from './utils.js';
 import type { 
   ListToolsResult,
@@ -68,14 +68,14 @@ export class BaseMcpServer {
   /**
    * Register multiple tools at once
    */
-  registerTools(tools: ToolDef<any>[]): void {
+  registerTools(tools: ToolDef<z.ZodType>[]): void {
     tools.forEach(tool => this.registerTool(tool));
   }
 
   /**
    * Connect to transport and set up handlers
    */
-  async connect(transport: any): Promise<void> {
+  async connect(transport: Transport): Promise<void> {
     await this.server.connect(transport);
     this.connected = true;
     this._setupHandlers();
@@ -101,7 +101,7 @@ export class BaseMcpServer {
       ListToolsRequestSchema,
       async () => {
         const toolsList = Array.from(this.tools.values()).map(tool => {
-          const schema = tool.schema as z.ZodObject<any>;
+          const schema = tool.schema as z.AnyZodObject;
           const shape = schema.shape || {};
           
           const jsonSchema = {
@@ -110,7 +110,7 @@ export class BaseMcpServer {
               const zodType = value as z.ZodType;
               acc[key] = this._zodToJsonSchema(zodType);
               return acc;
-            }, {} as Record<string, any>),
+            }, {} as Record<string, JSONSchema>),
             required: Object.keys(shape).filter(key => {
               const zodType = shape[key] as z.ZodType;
               return !zodType.isOptional();
@@ -147,7 +147,7 @@ export class BaseMcpServer {
 
     this.server.setRequestHandler(
       CallToolRequestSchema,
-      async (request, extra) => {
+      async (request) => {
         const { name, arguments: args } = request.params;
         
         const tool = this.tools.get(name);
@@ -181,7 +181,7 @@ export class BaseMcpServer {
   /**
    * Convert Zod schema to JSON Schema (simplified)
    */
-  private _zodToJsonSchema(zodType: z.ZodType): any {
+  private _zodToJsonSchema(zodType: z.ZodType): JSONSchema {
     if (zodType instanceof z.ZodString) {
       return { type: 'string' };
     } else if (zodType instanceof z.ZodNumber) {
@@ -189,11 +189,15 @@ export class BaseMcpServer {
     } else if (zodType instanceof z.ZodBoolean) {
       return { type: 'boolean' };
     } else if (zodType instanceof z.ZodUnion) {
-      const options = (zodType as any)._def.options;
-      return { oneOf: options.map((opt: z.ZodType) => this._zodToJsonSchema(opt)) };
+      const unionType = zodType as z.ZodUnion<[z.ZodType, ...z.ZodType[]]>;
+      const options = unionType._def.options;
+      return { 
+        oneOf: options.map((opt: z.ZodType) => this._zodToJsonSchema(opt)) 
+      } as JSONSchema;
     } else if (zodType instanceof z.ZodOptional) {
-      return this._zodToJsonSchema((zodType as any)._def.innerType);
+      const optionalType = zodType as z.ZodOptional<z.ZodType>;
+      return this._zodToJsonSchema(optionalType._def.innerType);
     }
-    return { type: 'string' }; // fallback
+    return { type: 'string' as const }; // fallback
   }
 }

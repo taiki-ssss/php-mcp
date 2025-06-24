@@ -37,7 +37,7 @@ export { Result, ok, err, isOk, isErr } from './utils/result.js';
 
 import { tokenize, type TokenizerOptions } from './lexer/tokenizer.js';
 import { parse, type ParserOptions } from './parser/parser.js';
-import type { Program, PhpProgram } from './core/ast.js';
+import type { PhpProgram } from './core/ast.js';
 import type { Token } from './core/token.js';
 import { Result, ok, err } from './utils/result.js';
 

@@ -1,6 +1,8 @@
-import { PhpSymbol, SymbolKind, SourceLocation } from '../../../entities/symbol/index.js';
+import { PhpSymbol, SourceLocation } from '../../../entities/symbol/index.js';
 import { PhpProgram } from '../php-parser/index.js';
 import { walk } from '../php-parser/analyzer/walker.js';
+import * as AST from '../php-parser/core/ast.js';
+import { DEFAULT_NAMES } from '../php-parser/constants.js';
 
 /**
  * Extract all symbols from a PHP AST
@@ -10,7 +12,7 @@ export function extractSymbols(ast: PhpProgram, filePath: string): PhpSymbol[] {
   let currentNamespace: string | undefined;
   let currentClass: string | undefined;
 
-  walk(ast, (node, context) => {
+  walk(ast, (node) => {
     const nodeType = node.type;
     const nodeData = node as any;
 
@@ -24,7 +26,7 @@ export function extractSymbols(ast: PhpProgram, filePath: string): PhpSymbol[] {
     if (nodeType === 'ClassDeclaration') {
       currentClass = nodeData.name?.name;
       const symbol: PhpSymbol = {
-        name: nodeData.name?.name || 'unknown',
+        name: nodeData.name?.name || DEFAULT_NAMES.UNKNOWN,
         kind: 'class',
         location: {
           file: filePath,
@@ -42,7 +44,7 @@ export function extractSymbols(ast: PhpProgram, filePath: string): PhpSymbol[] {
     // Function declarations
     if (nodeType === 'FunctionDeclaration') {
       const symbol: PhpSymbol = {
-        name: nodeData.name?.name || 'unknown',
+        name: nodeData.name?.name || DEFAULT_NAMES.UNKNOWN,
         kind: 'function',
         location: {
           file: filePath,
@@ -57,7 +59,7 @@ export function extractSymbols(ast: PhpProgram, filePath: string): PhpSymbol[] {
     // Class methods
     if (nodeType === 'MethodDeclaration' && currentClass) {
       const symbol: PhpSymbol = {
-        name: nodeData.name?.name || 'unknown',
+        name: nodeData.name?.name || DEFAULT_NAMES.UNKNOWN,
         kind: 'method',
         location: {
           file: filePath,
@@ -77,7 +79,7 @@ export function extractSymbols(ast: PhpProgram, filePath: string): PhpSymbol[] {
     // Properties
     if (nodeType === 'PropertyDeclaration' && currentClass) {
       const symbol: PhpSymbol = {
-        name: nodeData.name?.name || 'unknown',
+        name: nodeData.name?.name || DEFAULT_NAMES.UNKNOWN,
         kind: 'property',
         location: {
           file: filePath,
@@ -135,66 +137,47 @@ export function findSymbolReferences(
     const nodeData = node as any;
 
     // Check identifiers
-    if (nodeType === 'Identifier') {
-      if (nodeData.name === symbolName && node.location) {
-        references.push({
-          file: filePath,
-          line: node.location.start.line,
-          column: node.location.start.column,
-        });
-      }
+    if (nodeType === 'Identifier' && nodeData.name === symbolName) {
+      addLocationIfExists(references, filePath, node.location);
     }
 
     // Check variable expressions
-    if (nodeType === 'VariableExpression') {
-      if (nodeData.name === symbolName && node.location) {
-        references.push({
-          file: filePath,
-          line: node.location.start.line,
-          column: node.location.start.column,
-        });
-      }
+    if (nodeType === 'VariableExpression' && nodeData.name === symbolName) {
+      addLocationIfExists(references, filePath, node.location);
     }
 
     // Check member expressions (property/method access)
-    if (nodeType === 'MemberExpression') {
-      if (nodeData.property?.type === 'Identifier' && nodeData.property?.name === symbolName) {
-        if (nodeData.property?.location) {
-          references.push({
-            file: filePath,
-            line: nodeData.property.location.start.line,
-            column: nodeData.property.location.start.column,
-          });
-        }
-      }
+    if (nodeType === 'MemberExpression' && nodeData.property?.type === 'Identifier' && nodeData.property?.name === symbolName) {
+      addLocationIfExists(references, filePath, nodeData.property.location);
     }
 
     // Check call expressions
-    if (nodeType === 'CallExpression') {
-      if (nodeData.callee?.type === 'Identifier' && nodeData.callee?.name === symbolName) {
-        if (nodeData.callee?.location) {
-          references.push({
-            file: filePath,
-            line: nodeData.callee.location.start.line,
-            column: nodeData.callee.location.start.column,
-          });
-        }
-      }
+    if (nodeType === 'CallExpression' && nodeData.callee?.type === 'Identifier' && nodeData.callee?.name === symbolName) {
+      addLocationIfExists(references, filePath, nodeData.callee.location);
     }
 
     // Check new expressions
-    if (nodeType === 'NewExpression') {
-      if (nodeData.callee?.type === 'Identifier' && nodeData.callee?.name === symbolName) {
-        if (nodeData.callee?.location) {
-          references.push({
-            file: filePath,
-            line: nodeData.callee.location.start.line,
-            column: nodeData.callee.location.start.column,
-          });
-        }
-      }
+    if (nodeType === 'NewExpression' && nodeData.callee?.type === 'Identifier' && nodeData.callee?.name === symbolName) {
+      addLocationIfExists(references, filePath, nodeData.callee.location);
     }
   });
 
   return references;
+}
+
+/**
+ * Helper function to add location to references array
+ */
+function addLocationIfExists(
+  references: SourceLocation[],
+  filePath: string,
+  location?: AST.SourceLocation
+): void {
+  if (location) {
+    references.push({
+      file: filePath,
+      line: location.start.line,
+      column: location.start.column,
+    });
+  }
 }

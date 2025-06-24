@@ -9,6 +9,7 @@
 import { Token, TokenKind, KEYWORDS, createToken } from '../core/token.js';
 import { SourcePosition, createLocation } from '../core/location.js';
 import { Scanner, CharUtils } from './scanner.js';
+import { PHP_TAGS, PHP_TAG_LENGTHS, COMMENT_MARKERS, COMMENT_LENGTHS, NUMBER_PREFIXES } from '../constants.js';
 
 /**
  * Tokenizer options
@@ -191,10 +192,10 @@ export class Tokenizer {
    */
   private scanOutsidePhp(start: SourcePosition): Token {
     // Check for <?php tag
-    if (this.scanner.matches('<?php')) {
-      this.scanner.skip(5);
+    if (this.scanner.matches(PHP_TAGS.OPEN_TAG)) {
+      this.scanner.skip(PHP_TAG_LENGTHS.OPEN_TAG);
       // Include whitespace after tag
-      let tagText = '<?php';
+      let tagText = PHP_TAGS.OPEN_TAG;
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
       }
@@ -203,10 +204,10 @@ export class Tokenizer {
     }
 
     // Check for <?= tag
-    if (this.scanner.matches('<?=')) {
-      this.scanner.skip(3);
+    if (this.scanner.matches(PHP_TAGS.OPEN_TAG_ECHO)) {
+      this.scanner.skip(PHP_TAG_LENGTHS.OPEN_TAG_ECHO);
       // Include whitespace after tag
-      let tagText = '<?=';
+      let tagText = PHP_TAGS.OPEN_TAG_ECHO;
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
       }
@@ -215,10 +216,10 @@ export class Tokenizer {
     }
 
     // Check for <? tag (short_open_tag)
-    if (this.scanner.matches('<?') && !this.scanner.matches('<?xml')) {
-      this.scanner.skip(2);
+    if (this.scanner.matches(PHP_TAGS.OPEN_TAG_SHORT) && !this.scanner.matches('<?xml')) {
+      this.scanner.skip(PHP_TAG_LENGTHS.OPEN_TAG_SHORT);
       // Include whitespace after tag
-      let tagText = '<?';
+      let tagText = PHP_TAGS.OPEN_TAG_SHORT;
       if (this.scanner.peek() === ' ' || this.scanner.peek() === '\t') {
         tagText += this.scanner.advance();
       }
@@ -244,9 +245,9 @@ export class Tokenizer {
    * @returns Comment token
    */
   private scanSingleLineComment(start: SourcePosition): Token {
-    this.scanner.skip(2); // //
+    this.scanner.skip(COMMENT_LENGTHS.LINE_COMMENT);
     const content = this.scanner.consumeUntil(char => CharUtils.isNewline(char));
-    return this.makeToken(TokenKind.Comment, '//' + content, start);
+    return this.makeToken(TokenKind.Comment, COMMENT_MARKERS.LINE_COMMENT + content, start);
   }
 
   /**
@@ -258,14 +259,14 @@ export class Tokenizer {
    * @returns Comment or DocComment token
    */
   private scanMultiLineComment(start: SourcePosition): Token {
-    this.scanner.skip(2); // /*
-    let content = '/*';
+    this.scanner.skip(COMMENT_LENGTHS.BLOCK_COMMENT_START);
+    let content = COMMENT_MARKERS.BLOCK_COMMENT_START;
     let isDocComment = this.scanner.peek() === '*' && this.scanner.peek(1) !== '/';
 
     while (!this.scanner.isAtEnd()) {
-      if (this.scanner.matches('*/')) {
-        content += '*/';
-        this.scanner.skip(2);
+      if (this.scanner.matches(COMMENT_MARKERS.BLOCK_COMMENT_END)) {
+        content += COMMENT_MARKERS.BLOCK_COMMENT_END;
+        this.scanner.skip(COMMENT_LENGTHS.BLOCK_COMMENT_END);
         break;
       }
       content += this.scanner.advance();
